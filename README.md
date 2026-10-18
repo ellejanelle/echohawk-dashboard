@@ -1,5 +1,14 @@
 # EchoHawk
 
+## Built with IBM Bob
+
+The backend (`server/`) and the dashboard screens (`web/src/board`, `web/src/console`, `web/src/alerts`) in this repo were
+rebuilt by IBM Bob, stage by stage and test-first, from our spec (`docs/BUILD_SPEC.md`, `docs/IMPLEMENTATION_PLAN.md`) with
+our earlier prototype as a read-only reference. The 105 prototype tests were the acceptance spec; Bob's build passes them
+plus 3 new tests for the Wi-Fi button path (108/108), and the web build passes. Every prompt, test count, Bob cost and commit
+is in `docs/BOB_LOG.md`; the prompts are in `docs/BOB_DASHBOARD_BUILD.md`. The resident app (`app/`, `web/src/app`,
+`web/src/resident`) and the tag firmware were built by the team outside Bob.
+
 AI intake and corroboration layer for overloaded 911 and non-emergency lines, with an off-grid household alert path.
 It sits behind the 911 center (PSAP); it does not answer 911 and does not replace dispatchers or CAD.
 

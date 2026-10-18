@@ -77,3 +77,4 @@ read-only reference. The resident app was copied unchanged. Prompts: docs/BOB_DA
 | D2 | 5:50 PM | engine, units, callbacks, relay, research, broadcasts | 21/31 → 53/63 runnable (remaining failures only need http.js / retell_ws.js) | 4.03 | 04c49d0 |
 | D3 | 6:02 PM | retell_ws, http, fake client, replay, resident, provisioning (seed checked) | 53/63 → 105/105 | 9.20 | a2fde91 |
 | D4 | 6:26 PM | server/index.js, Wi-Fi device test (3 cases), firmware commit | 105 → 108/108 | 2.88 | be9b9f6 |
+| D5 | 6:41 PM | board, console, alerts screens ported in React/TS; fetch error handling, empty-list guards, map null guard; web build passes | 108/108 | 10.16 | a7ff47a |
