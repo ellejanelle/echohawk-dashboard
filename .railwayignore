@@ -1,0 +1,5 @@
+# Not needed in the hosted build
+web/ios/
+web/mobile-dist/
+docs/
+*.log

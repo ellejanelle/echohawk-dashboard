@@ -228,6 +228,15 @@ export function createHttpServer({ store, engine, hub }) {
         const out = devicePacket(body);
         return json(res, out.status, out.body);
       }
+      // Receipt 1 ("picked up by node N") signed here, so the browser node page never needs the frame key.
+      if (path === "/device/receipt" && method === "POST") {
+        const body = JSON.parse((await readBody(req)).toString() || "{}");
+        const sequence = Number(body.sequence), node = String(body.node_id || "");
+        if (!Number.isInteger(sequence) || sequence < 0 || sequence > 0xffff) return json(res, 400, { error: "sequence must be 0..65535" });
+        if (!DEMO_NODES[node]) return json(res, 400, { error: "unknown node_id" });
+        const stage = body.stage === "delivered" ? "delivered" : "picked_up";
+        return json(res, 200, { ack_b64: toBase64(ackFrame({ stage, sequence, node, language: body.language || "en" }, config.frameKey)) });
+      }
 
       if (path === "/incidents" && method === "GET") {
         const rung = url.searchParams.get("rung");
@@ -543,6 +552,8 @@ export function createHttpServer({ store, engine, hub }) {
         res.writeHead(200, { "content-type": "application/json" }); return res.end(data);
       }
       if (path === "/geo/rd" && method === "POST") {
+        // Writes a file on the host: supervisor only on a public deployment (the polygons ship with the repo anyway).
+        if (role(req) !== "supervisor") return json(res, 401, { error: "supervisor sign-in required" });
         const raw = (await readBody(req)).toString();
         let gj; try { gj = JSON.parse(raw); } catch { return json(res, 400, { error: "bad json" }); }
         if (gj.type !== "FeatureCollection" || !Array.isArray(gj.features) || !gj.features.length || !("REPDIST" in (gj.features[0].properties || {}))) return json(res, 400, { error: "not an LAPD reporting district FeatureCollection" });

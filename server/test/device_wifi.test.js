@@ -109,3 +109,41 @@ test("D4-W3: frame with one flipped bit returns 400", () => withServer(async ({ 
   const data = await res.json();
   assert.ok(data.error, "error field present");
 }));
+
+// ── D4-W4: node page gets receipt 1 ("picked up") signed by the server ───────
+
+test("D4-W4: /device/receipt returns a valid stage-1 ack for the node without the page holding the key", () => withServer(async ({ port }) => {
+  const res = await fetch(`http://localhost:${port}/device/receipt`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ node_id: "N-0812-A", sequence: SEQ, language: "en" }),
+  });
+  assert.equal(res.status, 200);
+  const { ack_b64 } = await res.json();
+  const ack = decodeFrame(Buffer.from(ack_b64, "base64"), FRAME_KEY, new ReplayWindow());
+  assert.equal(ack.ok, true);
+  assert.equal(ack.type, "ack");
+  assert.equal(ack.sequence, SEQ);
+  assert.equal(ack.severity, 1); // stage 1: picked up
+  assert.equal(ack.zone, 1);     // node number of N-0812-A
+  const bad = await fetch(`http://localhost:${port}/device/receipt`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ node_id: "N-9999-X", sequence: SEQ }),
+  });
+  assert.equal(bad.status, 400);
+}));
+
+// ── D4-W5: snapshot path is configurable and the store reloads from it ───────
+
+test("D4-W5: Store persists to a configurable path and reloads after a restart", async () => {
+  const { mkdtempSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const path = join(mkdtempSync(join(tmpdir(), "ehawk-")), "nested", "db.json");
+  const a = new Store(path);
+  a.incidents.push({ id: "inc_test", rung: "hand" });
+  a.save();
+  assert.equal(existsSync(path), true);
+  const b = new Store(path);
+  assert.equal(b.incidents.length, 1);
+  assert.equal(b.incidents[0].id, "inc_test");
+});

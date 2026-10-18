@@ -4,7 +4,9 @@
 
 export const config = {
   port: Number(process.env.PORT || 8787),
-  publicBaseUrl: process.env.PUBLIC_BASE_URL || "http://localhost:8787",
+  host: process.env.HOST || "0.0.0.0",            // hosted platforms route to 0.0.0.0, not loopback
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || "http://localhost:8787").replace(/\/+$/, ""),
+  dbPath: process.env.DB_PATH || "data/db.json",  // Railway: /var/data/db.json on the mounted volume
   salt: process.env.ECHOHAWK_SALT || "dev-salt",
   frameKey: process.env.ECHOHAWK_FRAME_KEY || "dev-frame-key",
   // Retell signs webhooks with the API key (retell-sdk webhook_auth)

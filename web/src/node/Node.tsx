@@ -14,6 +14,24 @@ const TYPE = ["directive", "check-in", "SOS", "receipt"];
 const TARGET = ["unknown", "power", "water", "gas", "power line", "structure fire", "wildfire", "road", "flood", "person", "vehicle"];
 type Line = { at: string; kind: "in" | "out" | "net" | "warn"; text: string };
 type Channel = "ble" | "sound";
+type Queued = { key: string; frame_b64: string; channel: Channel; seq: number; zone: number; type: string; lang: string; at: number };
+
+// Durable outbox for reports heard but not yet delivered to dispatch (localStorage; one browser, one node).
+const QUEUE_KEY = "ehawk-node-outbox", RETRY_MS = 10_000, QUEUE_TTL_MS = 24 * 60 * 60 * 1000;
+function queueAll(): Queued[] {
+  try { return (JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]") as Queued[]).filter((q) => Date.now() - q.at < QUEUE_TTL_MS); } catch { return []; }
+}
+function queueAdd(item: Queued): boolean {
+  try {
+    const all = queueAll().filter((q) => q.frame_b64 !== item.frame_b64);
+    all.push(item);
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(all));
+    return (localStorage.getItem(QUEUE_KEY) || "").includes(item.frame_b64);
+  } catch { return false; }
+}
+function queueDrop(item: Queued) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queueAll().filter((q) => q.frame_b64 !== item.frame_b64))); } catch { /* best effort */ }
+}
 
 export function Node() {
   const [nodeId, setNodeId] = useState(() => new URLSearchParams(location.search).get("node") || "N-0812-A");
@@ -48,26 +66,61 @@ export function Node() {
     }
     add("in", `${TYPE[type]} #${seq} heard by ${how}: ${TARGET[bytes[3] >> 4]}, severity ${bytes[3] & 0x0f}, zone ${zone}`);
     const lang = ["en", "es", "ko", "zh", "tl", "hy", "vi", "fa", "ru", "ar", "ja", "hi", "th", "uk", "yue"][bytes[4] & 0x0f] || "en";
-    const r1 = await signAck({ stage: 1, sequence: seq, node: node.num, language: lang });
+    // Receipt 1 stops the tag repeating, so the report is queued durably (survives a page reload) BEFORE receipt 1 goes out.
+    // If dispatch is unreachable, this page keeps retrying the queued report until it is delivered.
+    const item: Queued = { key, frame_b64: b64(bytes), channel, seq, zone, type: TYPE[type], lang, at: Date.now() };
+    if (!queueAdd(item)) { add("warn", "Could not save the report locally; not sending receipt 1 so the tag keeps repeating."); return; }
+    const r1 = await receipt1(seq, lang);
     const entry = { at: Date.now(), receipts: [r1] };
     seen.current.set(key, entry);
     await sendBack(r1, channel);
     add("out", `Receipt 1 sent back by ${how}: picked up by ${node.id}`);
     setLast({ type: TYPE[type], zone, seq, stage: 1, channel });
+    await deliver(item, entry);
+  };
+
+  // Receipt 1 is signed by the server (the frame key stays off this page); if the server is unreachable, sign locally with the demo key.
+  const receipt1 = async (sequence: number, language: string) => {
     try {
-      const res = await fetch("/device/packets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ node_id: node.id, channel, frame_b64: b64(bytes) }) });
+      const r = await fetch("/device/receipt", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ node_id: node.id, sequence, language, stage: "picked_up" }) });
+      if (r.ok) return unb64((await r.json()).ack_b64);
+    } catch { /* offline: fall through */ }
+    return signAck({ stage: 1, sequence, node: node.num, language });
+  };
+
+  // Forward one queued report to dispatch. On success, drop it from the queue and send receipt 2 back.
+  const deliver = async (item: Queued, entry?: { receipts: Uint8Array[] }) => {
+    const how = item.channel === "ble" ? "Bluetooth" : "sound";
+    try {
+      const res = await fetch("/device/packets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ node_id: node.id, channel: item.channel, frame_b64: item.frame_b64 }) });
       const out = await res.json();
-      if (!res.ok) { add("warn", `Dispatch refused it: ${out.error || res.status}`); return; }
+      if (!res.ok) { queueDrop(item); add("warn", `Dispatch refused it: ${out.error || res.status}`); return true; }
+      queueDrop(item);
       add("net", out.duplicate ? `Dispatch already had it from ${out.picked_up?.node || "another node"}; now heard by ${out.heard_by?.length} node(s)` : `Forwarded to dispatch: incident ${out.incident_id}, ${out.rung === "hand" ? "needs a person" : out.rung}`);
       if (out.ack_b64) {
-        const r2 = unb64(out.ack_b64); entry.receipts.push(r2);
-        if (channel === "sound") await new Promise((z) => setTimeout(z, 2500));
-        await sendBack(r2, channel);
+        const r2 = unb64(out.ack_b64); entry?.receipts.push(r2);
+        if (item.channel === "sound") await new Promise((z) => setTimeout(z, 2500));
+        await sendBack(r2, item.channel);
         add("out", `Receipt 2 sent back by ${how}: delivered to dispatch (signed by the server)`);
-        setLast({ type: TYPE[type], zone, seq, stage: 2, incident: out.incident_id, rung: out.rung, channel });
+        setLast({ type: item.type, zone: item.zone, seq: item.seq, stage: 2, incident: out.incident_id, rung: out.rung, channel: item.channel });
       }
-    } catch { add("warn", "No route to dispatch right now. Holding the report; the sender already has receipt 1."); }
+      return true;
+    } catch {
+      add("warn", `No route to dispatch right now. Report #${item.seq} is saved on this node and will be retried every ${RETRY_MS / 1000} s.`);
+      return false;
+    }
   };
+
+  // Retry anything still queued (including reports queued before a reload).
+  useEffect(() => {
+    const tick = async () => { for (const item of queueAll()) await deliver(item); };
+    const pending = queueAll().length;
+    if (pending) add("net", `${pending} saved report(s) waiting for dispatch; retrying.`);
+    const t = setInterval(tick, RETRY_MS);
+    tick();
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId]);
 
   const connectTag = async () => {
     try {
