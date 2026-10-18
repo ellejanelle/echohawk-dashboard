@@ -17,7 +17,7 @@
 //   Optional external SOS button: GPIO 4 to GND (internal pull-up)
 //
 // Build: Arduino IDE 2.x with "esp32 by Espressif Systems" (2.x or 3.x). Board: "ESP32 Dev Module". Serial monitor 115200.
-// DEMO KEY: "dev-frame-key" matches the server default ECHOHAWK_FRAME_KEY. A real device gets a per-deployment key.
+// KEY: copy secrets.example.h to secrets.h and set FRAME_KEY to the server's ECHOHAWK_FRAME_KEY. A real device gets a per-deployment key.
 
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -27,7 +27,7 @@
 
 // ---------- settings ----------
 static const char *DEVICE_NAME = "EchoHawk-Tag-01";
-static const char *FRAME_KEY = "dev-frame-key";
+#include "secrets.h"                     // FRAME_KEY: must equal ECHOHAWK_FRAME_KEY in the server .env
 static const uint16_t ZONE = 6;          // demo zone Z06 (LAPD reporting district 0812 on the board)
 static const uint8_t LANG = 0;           // 0 en, 1 es, 2 ko, 3 zh, 4 tl, 5 hy, 6 vi, 7 fa, 8 ru, 9 ar, 10 ja, 11 hi, 12 th, 13 uk, 14 yue
 static const int PIN_BUTTON = 0;         // BOOT button on the dev board

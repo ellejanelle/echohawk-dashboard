@@ -9,3 +9,6 @@ web/ios/App/App/capacitor.config.json
 web/ios/App/CapApp-SPM/.build/
 data/relay-outbox.json
 data/relay-outbox.json.tmp
+
+# device secrets (frame key, Wi-Fi password)
+firmware/**/secrets.h
