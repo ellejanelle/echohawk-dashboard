@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoHawk Chirp Sender (eHawk stand-in)</title>
+<style>
+  body { margin:0; background:#0f1115; color:#e8eaf0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:24px; max-width:720px }
+  h1 { font-size:18px } .card { background:#171a21; border:1px solid #262b36; border-radius:10px; padding:14px; margin:12px 0 }
+  label { display:block; color:#8b93a7; font-size:13px; margin:8px 0 4px } input, select { background:#12151c; color:#e8eaf0; border:1px solid #262b36; border-radius:6px; padding:8px; width:100% }
+  button { background:#232838; color:#e8eaf0; border:1px solid #262b36; border-radius:8px; padding:12px 16px; font-size:15px; cursor:pointer; margin-top:10px } button.red { border-color:#ff5d5d }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size:13px; color:#8b93a7; word-break:break-all } .note { color:#8b93a7; font-size:13px }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px }
+</style>
+</head>
+<body>
+<h1>eHawk stand-in: chirp a signed directive</h1>
+<p class="note">This page plays the role of the household eHawk for the demo. Step 1 simulates the NOAA SAME burst arriving (POST /alerts/same). The server signs a 16-byte directive. Step 2 plays it as sound. A phone with the EchoHawk app open, mic permission granted, in airplane mode, within arm's reach, decodes it, verifies the signature, and re-voices it in the household language. Audible mode is for the stage; it does not work in loud rooms, and the range is about one meter. That is the honest claim.</p>
+
+<div class="card">
+  <h3>1. Simulate the NOAA alert arriving at the eHawk</h3>
+  <div class="row">
+    <div><label>SAME event code</label><select id="event_code"><option value="SPW">SPW shelter in place warning</option><option value="EVI">EVI evacuation immediate</option><option value="CEM">CEM civil emergency message</option><option value="RWT">RWT required weekly test</option></select></div>
+    <div><label>Zone (numeric, e.g. 802 for RD 0802, 6 for Z06)</label><input id="zone" value="6"></div>
+  </div>
+  <div class="row">
+    <div><label>Target</label><select id="target"><option>wildfire</option><option>structure_fire</option><option>gas</option><option>flood</option><option>power_line</option><option>unknown</option></select></div>
+    <div><label>Household language for re-voicing</label><select id="language"><option value="es">es</option><option value="en">en</option><option value="ko">ko</option><option value="zh">zh</option><option value="tl">tl</option><option value="hy">hy</option><option value="vi">vi</option><option value="fa">fa</option></select></div>
+  </div>
+  <button onclick="issue()">Receive SAME burst and sign directive</button>
+  <div class="mono" id="issued"></div>
+</div>
+
+<div class="card">
+  <h3>2. Chirp it</h3>
+  <label>Protocol</label><select id="proto"><option value="AUDIBLE_FAST">Audible fast (stage demo, ~1 m)</option><option value="AUDIBLE_NORMAL">Audible normal (more robust, slower)</option><option value="ULTRASOUND_FAST">Ultrasound fast (quiet, shorter range, speaker dependent)</option></select>
+  <label>Volume 1 to 100</label><input id="vol" type="number" value="60" min="1" max="100">
+  <button class="red" onclick="play()" id="playBtn" disabled>Play chirp</button>
+  <button onclick="playRepeat()" id="repeatBtn" disabled>Repeat every 6 s</button>
+  <div class="mono" id="status"></div>
+</div>
+
+<div class="card">
+  <h3>Or chirp any frame</h3>
+  <label>frame_b64</label><input id="b64" placeholder="paste from GET /alerts/directive/:id/frame">
+  <button onclick="playB64()">Play pasted frame</button>
+</div>
+
+<script src="/vendor/ggwave.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let frame = null, gg = null, inst = null, ctx = null, timer = null;
+async function issue() {
+  const body = { event_code: $("event_code").value, zone: Number($("zone").value), target: $("target").value, language: $("language").value, locations: ["demo"] };
+  const r = await fetch("/alerts/same", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const a = await r.json(); frame = Uint8Array.from(atob(a.frame_b64), (c) => c.charCodeAt(0));
+  $("issued").textContent = `alert ${a.id} · action ${a.action} · frame ${[...frame].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  $("b64").value = a.frame_b64; $("playBtn").disabled = false; $("repeatBtn").disabled = false;
+}
+async function init() { if (gg) return; gg = await ggwave_factory(); const p = gg.getDefaultParameters(); p.sampleRateInp = 48000; p.sampleRateOut = 48000; p.payloadLength = 16; inst = gg.init(p); ctx = new AudioContext({ sampleRate: 48000 }); }
+function conv(src, type) { const buffer = new ArrayBuffer(src.byteLength); new src.constructor(buffer).set(src); return new type(buffer); }
+async function playBytes(bytes) {
+  await init(); const proto = gg.ProtocolId[`GGWAVE_PROTOCOL_${$("proto").value}`];
+  const wave = gg.encode(inst, bytes, proto, Number($("vol").value));
+  const f32 = conv(new Int8Array(wave), Float32Array); const ab = ctx.createBuffer(1, f32.length, 48000); ab.getChannelData(0).set(f32);
+  const s = ctx.createBufferSource(); s.buffer = ab; s.connect(ctx.destination); s.start(0);
+  $("status").textContent = `played ${bytes.length} bytes, ${(f32.length / 48000).toFixed(1)} s of audio, ${new Date().toLocaleTimeString()}`;
+}
+function play() { if (frame) playBytes(frame); }
+function playRepeat() { if (timer) { clearInterval(timer); timer = null; $("repeatBtn").textContent = "Repeat every 6 s"; return; } play(); timer = setInterval(play, 6000); $("repeatBtn").textContent = "Stop repeating"; }
+function playB64() { const s = $("b64").value.trim(); if (!s) return; playBytes(Uint8Array.from(atob(s), (c) => c.charCodeAt(0))); }
+</script>
+</body>
+</html>

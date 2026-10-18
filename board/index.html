@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoHawk Supervisor Board</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/board/map.js"></script>
+<style>
+  :root { --bg:#0b0d12; --panel:#141821; --panel2:#1a1f2b; --line:#252b39; --text:#eef0f6; --muted:#8b93a7; --dim:#5d6578;
+          --hand:#ff4d4f; --ask:#ffb020; --watch:#4f9dff; --ok:#3ddc97; --machine:#9b7bff; }
+  * { box-sizing:border-box }
+  html, body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif }
+  button { font:inherit; cursor:pointer; color:var(--text); background:#222838; border:1px solid #30384b; border-radius:8px; padding:6px 12px; transition:background .15s,border-color .15s,transform .05s }
+  button:hover { border-color:#4a5570; background:#283044 } button:active { transform:translateY(1px) }
+  .muted { color:var(--muted) } .small { font-size:12px }
+
+  /* header */
+  header { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px; padding:12px 22px; background:rgba(11,13,18,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line) }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; letter-spacing:.2px }
+  .brand .dot { width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(61,220,151,.6); animation:live 2s infinite }
+  @keyframes live { 0%{box-shadow:0 0 0 0 rgba(61,220,151,.55)} 70%{box-shadow:0 0 0 10px rgba(61,220,151,0)} 100%{box-shadow:0 0 0 0 rgba(61,220,151,0)} }
+  .pill { padding:3px 10px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); color:var(--muted); font-size:12px }
+  .spacer { flex:1 }
+  .clock { font-variant-numeric:tabular-nums; font-size:20px; font-weight:600 }
+  .meter { display:flex; gap:14px; color:var(--muted); font-size:12px } .meter b { color:var(--text); font-variant-numeric:tabular-nums }
+  .surge { border-color:#7a2f33; background:#3a1518; color:#ffd1d2; font-weight:600 } .surge:hover { background:#4a1b1f; border-color:#a33a40 }
+  .alertbtn { position:relative } .alertbtn .n { position:absolute; top:-7px; right:-7px; min-width:20px; height:20px; border-radius:10px; background:var(--hand); color:#fff; font-size:11px; font-weight:700; display:none; align-items:center; justify-content:center; padding:0 5px }
+  .sound { font-size:12px; color:var(--dim) }
+
+  /* layout */
+  main { display:grid; grid-template-columns: minmax(0,1fr) 440px; gap:18px; padding:18px 22px 10px }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px }
+  h2 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:600 }
+  .ph { display:flex; align-items:center; gap:10px; margin-bottom:12px }
+  .tabs { display:flex; background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:3px; gap:2px }
+  .tabs button { border:0; background:transparent; padding:5px 14px; border-radius:7px; color:var(--muted) } .tabs button.on { background:#2a3245; color:var(--text) }
+  .legend { display:flex; gap:12px; font-size:12px; color:var(--muted); flex-wrap:wrap } .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px }
+
+  /* zone grid */
+  .gridwrap { position:relative }
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px }
+  .tile { position:relative; aspect-ratio: 1.55; border-radius:12px; padding:10px 12px; background:#11151d; border:1px solid #1f2533; overflow:hidden; transition:background .4s, border-color .4s, box-shadow .4s; display:flex; flex-direction:column; cursor:default }
+  .tile .tz { font-weight:700; font-size:15px; color:#c8cede; letter-spacing:.5px }
+  .tile .tb { position:absolute; top:9px; right:10px; min-width:26px; height:26px; border-radius:13px; display:none; align-items:center; justify-content:center; font-weight:700; font-variant-numeric:tabular-nums; background:rgba(0,0,0,.35); font-size:13px; padding:0 7px }
+  .tile .body { margin-top:auto }
+  .tile .ti { font-size:22px; line-height:1; margin-bottom:4px }
+  .tile .tl { font-weight:650; font-size:14px; line-height:1.2 }
+  .tile .ts { font-size:12px; color:rgba(238,240,246,.75); margin-top:2px }
+  .tile .quiet { color:var(--dim); font-size:12px }
+  .tile .tflag { position:absolute; left:12px; top:34px; font-size:10px; font-weight:800; letter-spacing:.8px; padding:2px 7px; border-radius:5px; background:var(--watch); color:#06101f; display:none }
+  .tile.busy .tb { display:flex }
+  .tile.r-watch { background:linear-gradient(160deg, rgba(79,157,255,.22), rgba(79,157,255,.06)); border-color:rgba(79,157,255,.45) }
+  .tile.r-ask { background:linear-gradient(160deg, rgba(255,176,32,.32), rgba(255,176,32,.08)); border-color:rgba(255,176,32,.7) }
+  .tile.r-hand { background:linear-gradient(160deg, rgba(255,77,79,.45), rgba(255,77,79,.12)); border-color:rgba(255,77,79,.9); box-shadow:0 0 28px rgba(255,77,79,.25) }
+  .tile.machine { background: repeating-linear-gradient(135deg, rgba(155,123,255,.20) 0 8px, rgba(155,123,255,.07) 8px 16px); border-color:rgba(155,123,255,.7); box-shadow:none }
+  .tile.flag { outline:3px solid var(--watch); outline-offset:2px; animation:flagpulse 1.6s ease-in-out infinite }
+  .tile.flag .tflag { display:block }
+  .tile .tspread { position:absolute; right:10px; top:40px; font-size:10px; font-weight:800; letter-spacing:.8px; padding:2px 7px; border-radius:5px; background:var(--ask); color:#1b1300; display:none }
+  .tile.spreading .tspread { display:block }
+  @keyframes flagpulse { 0%,100% { outline-color:rgba(79,157,255,1) } 50% { outline-color:rgba(79,157,255,.25) } }
+  .tile.ping::after { content:""; position:absolute; inset:0; border-radius:12px; background:rgba(255,255,255,.22); animation:ping 1.1s ease-out forwards; pointer-events:none }
+  @keyframes ping { from { opacity:1 } to { opacity:0 } }
+  .tile.alerted .tz::after { content:" !"; color:#fff; background:var(--hand); border-radius:4px; padding:0 5px; margin-left:6px; font-size:12px }
+  .tile.sel { box-shadow:0 0 0 2px #fff inset }
+  svg.links { position:absolute; inset:0; pointer-events:none; overflow:visible }
+  svg.links line { stroke:var(--ask); stroke-width:6; stroke-linecap:round; stroke-dasharray:2 12; animation:dash 1s linear infinite; filter:drop-shadow(0 0 6px rgba(255,176,32,.8)) }
+  svg.links text { fill:#ffd58a; font-size:11px; font-weight:800; letter-spacing:.8px; paint-order:stroke; stroke:#0b0d12; stroke-width:4px }
+  @keyframes dash { to { stroke-dashoffset:-14 } }
+  #map { height:560px; border-radius:10px; overflow:hidden; display:none } #map.leaflet-container { background:#11151d }
+  .note { color:var(--muted); font-size:12px; margin-top:10px; line-height:1.5 }
+
+  /* incident cards */
+  .cards { display:flex; flex-direction:column; gap:10px; max-height: calc(100vh - 150px); overflow:auto; padding-right:4px }
+  .card { border:1px solid var(--line); background:var(--panel2); border-radius:12px; padding:12px 14px; border-left:5px solid var(--watch); transition:transform .2s }
+  .card.hand { border-left-color:var(--hand) } .card.ask { border-left-color:var(--ask) } .card.machine { border-left-color:var(--machine) }
+  .card.fresh { animation:slidein .45s ease-out }
+  @keyframes slidein { from { transform:translateX(16px); opacity:0 } to { transform:none; opacity:1 } }
+  .card .top { display:flex; align-items:center; gap:8px }
+  .rung { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:800; font-size:11px; letter-spacing:.5px; color:#0b0d12 } .rung.hand{background:var(--hand);color:#fff} .rung.ask{background:var(--ask)} .rung.watch{background:var(--watch)} .rung.machine{background:var(--machine);color:#fff}
+  .card .zone { font-weight:800; font-size:15px } .card .ago { margin-left:auto; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums }
+  .card .what { font-size:16px; font-weight:650; margin:6px 0 2px }
+  .card .stats { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted) } .card .stats b { color:var(--text) }
+  .card .why { font-size:12px; color:var(--muted); margin-top:4px }
+  .acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px }
+  .acts button { padding:5px 10px; font-size:12px }
+  .acts button.sug { border-color:var(--ok); color:var(--ok) }
+  .acts button.sent { background:rgba(61,220,151,.14); border-color:rgba(61,220,151,.5); color:var(--ok); cursor:default }
+  .acts button.ack.done { color:var(--muted); cursor:default }
+  .chips { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px } .chip { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted) } .chip.unit { border-color:rgba(61,220,151,.5); color:var(--ok) } .chip.spread { border-color:rgba(255,176,32,.6); color:#ffd58a } .chip.trig { border-color:rgba(255,77,79,.6); color:#ffb3b4 }
+  .empty { color:var(--muted); padding:30px 10px; text-align:center; border:1px dashed var(--line); border-radius:12px }
+
+  /* lower row */
+  .lower { display:grid; grid-template-columns: 1fr 1.4fr 1fr; gap:18px; padding:0 22px 22px }
+  .feed { max-height:250px; overflow:auto; font-size:13px }
+  .feed div { padding:6px 0; border-bottom:1px solid #1d2230; display:flex; gap:10px; align-items:baseline }
+  .feed time { color:var(--dim); font-variant-numeric:tabular-nums; font-size:12px; min-width:62px }
+  .feed .k { display:inline-block; width:8px; height:8px; border-radius:50%; flex:none; margin-top:5px }
+  .feed .fresh { animation:slidein .35s ease-out }
+
+  /* alert takeover */
+  #alerts { position:fixed; top:74px; left:50%; transform:translateX(-50%); width:min(860px, 94vw); z-index:50; display:flex; flex-direction:column; gap:10px; pointer-events:none }
+  .alert { pointer-events:auto; border-radius:16px; padding:16px 18px 14px; background:linear-gradient(180deg,#3a0f12,#250a0c); border:2px solid var(--hand); box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 0 6px rgba(255,77,79,.15); animation:drop .45s cubic-bezier(.2,1.3,.4,1) }
+  .alert.amber { background:linear-gradient(180deg,#3a2a08,#241a06); border-color:var(--ask); box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 0 6px rgba(255,176,32,.15) }
+  .alert.violet { background:linear-gradient(180deg,#24173f,#170f2b); border-color:var(--machine); box-shadow:0 20px 60px rgba(0,0,0,.6), 0 0 0 6px rgba(155,123,255,.15) }
+  @keyframes drop { from { transform:translateY(-30px) scale(.97); opacity:0 } to { transform:none; opacity:1 } }
+  .alert .ah { display:flex; align-items:center; gap:10px; font-size:12px; font-weight:800; letter-spacing:1.2px }
+  .alert .kind { padding:3px 10px; border-radius:6px; background:var(--hand); color:#fff } .alert.amber .kind { background:var(--ask); color:#1b1300 } .alert.violet .kind { background:var(--machine); color:#fff }
+  .alert .ah time { margin-left:auto; color:#e5c4c5; font-weight:500; letter-spacing:0; font-variant-numeric:tabular-nums }
+  .alert .title { font-size:24px; font-weight:750; margin:8px 0 6px; line-height:1.2 }
+  .alert .ev { display:flex; gap:8px; flex-wrap:wrap }
+  .alert .ev span { font-size:13px; padding:3px 10px; border-radius:999px; background:rgba(255,255,255,.08) }
+  .alert .ev b { font-variant-numeric:tabular-nums }
+  .alert .hint { font-size:13px; color:#f1d6d6; margin-top:8px } .alert.amber .hint { color:#f3e2bd } .alert.violet .hint { color:#ddd2ff }
+  .alert .acts button { font-size:13px; padding:7px 14px; background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.18) }
+  .alert .acts button.sug { border-color:var(--ok); color:#bff5dc; background:rgba(61,220,151,.12) }
+  .alert .acts .right { margin-left:auto; display:flex; gap:6px }
+  .bar { pointer-events:auto; display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:12px; background:#2a0d10; border:1px solid rgba(255,77,79,.7); cursor:pointer; animation:drop .4s ease-out; box-shadow:0 10px 30px rgba(0,0,0,.5) }
+  .bar.amber { background:#2a1f07; border-color:rgba(255,176,32,.7) } .bar.violet { background:#1d1433; border-color:rgba(155,123,255,.7) }
+  .bar .kind { font-size:11px; font-weight:800; letter-spacing:1px; padding:2px 8px; border-radius:5px; background:var(--hand); color:#fff } .bar.amber .kind { background:var(--ask); color:#1b1300 } .bar.violet .kind { background:var(--machine) }
+  .bar .bt { font-weight:650; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .bar .go { margin-left:auto; color:var(--muted); font-size:12px }
+  .more { pointer-events:auto; align-self:center; background:#1c2130; border:1px solid var(--line); border-radius:999px; padding:5px 14px; font-size:12px; color:var(--muted); cursor:pointer }
+  #edge { position:fixed; inset:0; pointer-events:none; z-index:40; box-shadow: inset 0 0 0 0 rgba(255,77,79,0) }
+  #edge.go { animation:edge 1.6s ease-out }
+  @keyframes edge { 0% { box-shadow: inset 0 0 0 10px rgba(255,77,79,.9), inset 0 0 120px rgba(255,77,79,.5) } 100% { box-shadow: inset 0 0 0 0 rgba(255,77,79,0) } }
+  .hist div { padding:7px 0; border-bottom:1px solid #1d2230; font-size:13px; display:flex; gap:8px; align-items:baseline }
+  .hist .st { margin-left:auto; font-size:11px; color:var(--dim) }
+  @media (max-width: 1100px) { main, .lower { grid-template-columns:1fr } .cards { max-height:none } }
+</style>
+</head>
+<body>
+<div id="edge"></div>
+<header>
+  <div class="brand"><span class="dot"></span>EchoHawk · Supervisor</div>
+  <span class="pill" id="mode">connecting</span>
+  <span class="spacer"></span>
+  <div class="meter" id="meter"></div>
+  <span class="sound" id="sound">click anywhere to turn on alert sound</span>
+  <button class="alertbtn" id="alertbtn" title="Show alert history">Alerts<span class="n" id="alertn"></span></button>
+  <button class="surge" id="surge">▶ Run demo surge</button>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+<div id="alerts"></div>
+<main>
+  <section class="panel">
+    <div class="ph">
+      <h2>City zones · live</h2>
+      <div class="tabs"><button class="on" data-v="grid">Zones</button><button data-v="map">LA map</button></div>
+      <span class="spacer"></span>
+      <div class="legend"><span><i style="background:var(--hand)"></i>Needs a person</span><span><i style="background:var(--ask)"></i>Check now</span><span><i style="background:var(--watch)"></i>Watching</span><span><i style="background:var(--machine)"></i>Alarms only</span><span><i style="outline:2px solid var(--watch);background:transparent"></i>Unusual volume</span><span><i style="background:var(--ask);height:4px;width:16px"></i>Spreading</span></div>
+    </div>
+    <div class="gridwrap" id="gridwrap"><div class="grid" id="grid"></div><svg class="links" id="links"></svg></div>
+    <div id="map"></div>
+    <div class="note" id="viewnote">Each square is a demo zone (Z01 to Z16, synthetic for the stage). Callers say "zone six" and their call lands here. A square lights up as calls arrive, turns red when a person is needed, gets a pulsing blue outline when its call volume is unusual for this hour, and an amber dashed link when the same problem shows up in a neighboring zone.</div>
+  </section>
+  <section class="panel">
+    <div class="ph"><h2>Needs attention · ranked</h2><span class="spacer"></span><span class="muted small" id="summary"></span></div>
+    <div class="cards" id="cards"></div>
+    <div class="note">Confidence is a heuristic (1 - p^n over independent callers), not a calibrated probability. Alarm activations and other machine sources are counted separately and never as callers.</div>
+  </section>
+</main>
+<div class="lower">
+  <section class="panel"><div class="ph"><h2>Alert history</h2></div><div class="hist feed" id="hist"><div class="muted">No alerts yet.</div></div></section>
+  <section class="panel"><div class="ph"><h2>What changed</h2></div><div class="feed" id="changes"><div class="muted">Waiting for calls.</div></div></section>
+  <section class="panel"><div class="ph"><h2>Silence panel · callbacks nobody answered</h2></div><div class="feed" id="silence"><div class="muted">No open callbacks.</div></div></section>
+</div>
+
+<script>
+const token = new URLSearchParams(location.search).get("token") || "dev-supervisor";
+const H = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const hms = (iso) => new Date(iso).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+const ago = (iso) => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m`; };
+const mins = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return `${m} min`; };
+
+const TARGET = {
+  power: ["⚡", "Power outage"], water: ["💧", "Water pressure loss"], gas: ["🔥", "Gas smell or leak"], power_line: ["⚠️", "Downed power line"],
+  structure_fire: ["🔥", "Fire"], wildfire: ["🔥", "Wildfire"], road: ["🚧", "Road hazard"], flood: ["🌊", "Flooding"],
+  person: ["🚑", "Injured or sick person"], vehicle: ["🚗", "Traffic collision"], alarm: ["🔔", "Alarm activation"], crime: ["🚓", "Crime report"], unknown: ["❔", "Unclear report"],
+};
+const tIcon = (t) => (TARGET[t] || TARGET.unknown)[0];
+const tName = (t) => (TARGET[t] || [null, String(t || "unknown")])[1];
+const TRIG = { asks_for_human: "asked for a person", breathing_qualified: "trouble breathing", dependent_alone: "child or dependent alone", distress: "caller in distress", electrical: "live electrical hazard", gas_or_pressure: "gas or pressure hazard", insists_higher_severity: "says it is worse", self_harm: "self harm risk", severe_bleeding: "severe bleeding", third_party_vulnerable: "vulnerable person", trapped: "someone trapped", unconscious: "unconscious", violence: "violence" };
+const trig = (t) => TRIG[t] || String(t).replace(/_/g, " ");
+const plainReason = (r) => String(r || "").replace(/hard trigger: ([a-z_, ]+)/, (_, x) => "caller said: " + x.split(/,\s*/).map(trig).join(", ")).replace(/independent sources/g, "independent callers");
+const RUNG = { hand: "NEEDS A PERSON", ask: "CHECK NOW", watch: "WATCHING" };
+const UNITS = { ems: "EMS", fire: "Fire", police: "Police", utility: "Utility" };
+const SUGGEST = { person: ["ems"], structure_fire: ["fire", "ems"], wildfire: ["fire"], gas: ["fire", "utility"], power_line: ["utility", "fire"], water: ["utility"], power: ["utility"], flood: ["fire", "utility"], road: ["police"], vehicle: ["police", "ems"], crime: ["police"], alarm: [], unknown: [] };
+const ZONES = Array.from({ length: 16 }, (_, i) => `Z${String(i + 1).padStart(2, "0")}`);
+const isMachineOnly = (i) => !i.independent_count && (i.machine_count || 0) > 0;
+
+let INC = [], INC_BY_ID = {}, WIN = [], seen = new Set(), acked = new Set(), lambdaByZone = {};
+let ALERTS = [], HIST = [], view = "grid", MAP = null, mapLoading = false;
+
+// ---------- zone grid ----------
+const tiles = {};
+for (const z of ZONES) { const d = document.createElement("div"); d.className = "tile"; d.dataset.z = z; d.innerHTML = `<div class="tz">${z}</div><div class="tb"></div><div class="tflag">UNUSUAL VOLUME</div><div class="tspread">SPREADING</div><div class="body"><div class="quiet">quiet</div></div>`; $("grid").appendChild(d); tiles[z] = d; }
+function ping(z) { const t = tiles[z]; if (!t) return; t.classList.remove("ping"); void t.offsetWidth; t.classList.add("ping"); setTimeout(() => t.classList.remove("ping"), 1200); }
+
+function flaggedZones() { const now = Date.now(); return new Set(WIN.filter((w) => w.flagged && now - new Date(w.window_start) < 2 * 3600e3).map((w) => w.zone_id)); }
+function countLastHour() { const now = Date.now(), c = {}; for (const w of WIN) if (now - new Date(w.window_start) < 3600e3) c[w.zone_id] = (c[w.zone_id] || 0) + w.n; return c; }
+
+function renderGrid() {
+  const flagged = flaggedZones(), counts = countLastHour();
+  const alertedZones = new Set(ALERTS.flatMap((a) => a.zones));
+  for (const z of ZONES) {
+    const t = tiles[z], list = INC.filter((i) => i.zone_id === z);
+    const top = list[0]; // ranked already
+    const n = counts[z] || list.reduce((a, i) => a + i.packet_ids.length, 0);
+    t.className = "tile" + (top ? (isMachineOnly(top) && list.every(isMachineOnly) ? " machine" : ` r-${top.rung}`) : "") + (flagged.has(z) ? " flag" : "") + (n ? " busy" : "") + (alertedZones.has(z) ? " alerted" : "") + (list.some((i) => INC_BY_ID[i.spread_linked_incident_id]) ? " spreading" : "") + (t.classList.contains("ping") ? " ping" : "");
+    t.querySelector(".tb").textContent = n || "";
+    const body = t.querySelector(".body");
+    if (!top) { body.innerHTML = n ? `<div class="ts">${n} call${n === 1 ? "" : "s"} · no details yet</div>` : `<div class="quiet">quiet</div>`; continue; }
+    const mo = list.every(isMachineOnly);
+    const who = mo ? `${top.machine_count} alarm activation${top.machine_count > 1 ? "s" : ""} · machines, not people` : `${top.independent_count} caller${top.independent_count === 1 ? "" : "s"}${top.machine_count ? ` + ${top.machine_count} alarm` : ""} · ${RUNG[top.rung].toLowerCase()}`;
+    body.innerHTML = `<div class="ti">${tIcon(top.target)}</div><div class="tl">${esc(mo ? "Alarms only" : tName(top.target))}${list.length > 1 ? ` <span class="muted small">+${list.length - 1} more</span>` : ""}</div><div class="ts">${esc(who)}</div>`;
+  }
+  drawLinks();
+}
+
+function drawLinks() {
+  const svg = $("links"), wrap = $("gridwrap").getBoundingClientRect();
+  const edges = new Map();
+  for (const i of INC) { const o = INC_BY_ID[i.spread_linked_incident_id]; if (!o || o.zone_id === i.zone_id) continue; const k = [i.zone_id, o.zone_id].sort().join("|"); edges.set(k, i.target); }
+  let out = "";
+  for (const [k, target] of edges) {
+    const [a, b] = k.split("|"); if (!tiles[a] || !tiles[b]) continue;
+    const ra = tiles[a].getBoundingClientRect(), rb = tiles[b].getBoundingClientRect();
+    const x1 = ra.left + ra.width / 2 - wrap.left, y1 = ra.top + ra.height / 2 - wrap.top, x2 = rb.left + rb.width / 2 - wrap.left, y2 = rb.top + rb.height / 2 - wrap.top;
+    // clip the center line to each tile's border, then reach 34px inside so the link reads as joining the two squares
+    const clip = (r, cx, cy, dx, dy) => { const hw = r.width / 2, hh = r.height / 2; const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity); return [cx + dx * t, cy + dy * t]; };
+    const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+    const [ax, ay] = clip(ra, x1, y1, ux, uy), [bx, by] = clip(rb, x2, y2, -ux, -uy);
+    const sx = ax - ux * 34, sy = ay - uy * 34, ex = bx + ux * 34, ey = by + uy * 34;
+    out += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}"/><circle cx="${sx}" cy="${sy}" r="7" fill="#ffb020"/><circle cx="${ex}" cy="${ey}" r="7" fill="#ffb020"/>`;
+  }
+  svg.innerHTML = out;
+}
+addEventListener("resize", drawLinks);
+
+// ---------- map view ----------
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  view = b.dataset.v; document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  $("gridwrap").style.display = view === "grid" ? "" : "none"; $("map").style.display = view === "map" ? "block" : "none";
+  $("viewnote").textContent = view === "grid"
+    ? "Each square is a demo zone (Z01 to Z16, synthetic for the stage). Callers say \"zone six\" and their call lands here. A square lights up as calls arrive, turns red when a person is needed, gets a pulsing blue outline when its call volume is unusual for this hour, and an amber dashed link when the same problem shows up in a neighboring zone."
+    : "Real LAPD reporting districts (City of LA GIS). Demo zones Z01 to Z16 are placed on West LA districts 0801 to 0834. Real district ids (for example 0802) paint where they are.";
+  if (view === "map") { if (!MAP && !mapLoading) { mapLoading = true; EH_MAP.create($("map"), { status: { set textContent(v) { $("viewnote").textContent = v; } } }).then((m) => { MAP = m; paintMap(true); }).catch((e) => { $("map").innerHTML = `<div class="empty">Map unavailable (${esc(e.message)}). The zone view has everything.</div>`; }); } else if (MAP) { MAP.map.invalidateSize(); paintMap(false); } }
+});
+function paintMap(focus) {
+  if (!MAP) return; MAP.reset(); const flagged = flaggedZones(), counts = countLastHour(), painted = [];
+  const byZone = {}; for (const i of INC) if (!byZone[i.zone_id]) byZone[i.zone_id] = i;
+  for (const z of new Set([...Object.keys(byZone), ...flagged])) { const i = byZone[z]; const rd = MAP.rdOf(z); const n = counts[z] || 0; if (MAP.paint(rd, { rung: i ? i.rung : "watch", flagged: flagged.has(z), intensity: 0.3 + Math.min(0.45, n * 0.08), label: `${z !== rd ? z + " on " : ""}RD ${rd} · ${i ? tName(i.target) + " · " + RUNG[i.rung].toLowerCase() : "watching"} · ${n} report(s) last hour${flagged.has(z) ? " · unusual volume" : ""}` })) painted.push(rd); }
+  if (focus && painted.length) MAP.focus(painted);
+}
+
+// ---------- incident cards ----------
+function deployButtons(incs, cls = "") {
+  const sent = new Set(incs.flatMap((i) => (i.dispatched || []).map((d) => d.unit)));
+  const sug = new Set(incs.flatMap((i) => SUGGEST[i.target] || []));
+  const ids = incs.map((i) => i.id).join(",");
+  return Object.entries(UNITS).map(([u, label]) => sent.has(u)
+    ? `<button class="sent" disabled>✓ ${label} sent</button>`
+    : `<button class="${sug.has(u) ? "sug" : ""} ${cls}" onclick="deploy('${esc(ids)}','${u}',this)">${sug.has(u) ? "★ " : ""}Send ${label}</button>`).join("");
+}
+function renderCards() {
+  const nHand = INC.filter((i) => i.rung === "hand").length, calls = INC.reduce((a, i) => a + i.packet_ids.length, 0);
+  $("summary").textContent = INC.length ? `${calls} calls → ${INC.length} lines` : "";
+  if (!INC.length) { $("cards").innerHTML = `<div class="empty">All quiet. Press <b>Run demo surge</b> to play the 20-call stage script, or place a real call.</div>`; return; }
+  $("cards").innerHTML = INC.map((i) => {
+    const mo = isMachineOnly(i), o = INC_BY_ID[i.spread_linked_incident_id];
+    const calls = i.packet_ids.length;
+    return `<div class="card ${mo ? "machine" : i.rung} ${seen.has(i.id) ? "" : "fresh"}" id="card-${esc(i.id)}">
+      <div class="top"><span class="rung ${mo ? "machine" : esc(i.rung)}">${mo ? "ALARMS ONLY" : RUNG[i.rung]}</span><span class="zone">${esc(i.zone_id)}</span><span class="ago">first report ${ago(i.first_report_at)} ago</span></div>
+      <div class="what">${tIcon(i.target)} ${esc(tName(i.target))}</div>
+      <div class="stats"><span><b>${calls}</b> call${calls === 1 ? "" : "s"} → <b>1</b> line</span><span><b>${i.independent_count}</b> independent caller${i.independent_count === 1 ? "" : "s"}</span>${i.machine_count ? `<span><b>${i.machine_count}</b> machine</span>` : ""}<span>confidence* <b>${Number(i.score).toFixed(2)}</b>${i.trend === "rising" ? " ↑" : ""}</span></div>
+      <div class="why">${mo ? "Only alarm activations so far. Likely one cause (power or wind), not separate emergencies. Confirm one address first." : esc(plainReason(i.last_reason))}</div>
+      <div class="chips">${o ? `<span class="chip spread">spreading with ${esc(o.zone_id)}</span>` : ""}${(i.triggers || []).map((t) => `<span class="chip trig">heard: ${esc(trig(t))}</span>`).join("")}${(i.dispatched || []).map((d) => `<span class="chip unit">${esc(UNITS[d.unit] || d.unit)} sent ${hms(d.at).slice(0, 5)} by ${esc(d.by)}</span>`).join("")}${acked.has(i.id) ? `<span class="chip">seen by supervisor</span>` : ""}</div>
+      <div class="acts">${deployButtons([i])}<button class="ack ${acked.has(i.id) ? "done" : ""}" onclick="ack('${esc(i.id)}')">${acked.has(i.id) ? "Seen" : "Mark seen"}</button><button onclick="closeInc('${esc(i.id)}')">Close</button></div>
+    </div>`;
+  }).join("");
+  for (const i of INC) seen.add(i.id);
+}
+
+// ---------- alerts ----------
+let audio = null;
+addEventListener("pointerdown", () => { if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); $("sound").textContent = "alert sound on"; } catch {} } }, { once: false });
+let lastChime = 0;
+function chime(level) {
+  if (!audio || Date.now() - lastChime < 1500) return; lastChime = Date.now();
+  const notes = level === "hand" ? [880, 660, 880] : [660, 880];
+  notes.forEach((f, k) => { const o = audio.createOscillator(), g = audio.createGain(); o.type = "sine"; o.frequency.value = f; const t = audio.currentTime + k * 0.16; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14); o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.15); });
+}
+function flashEdge() { const e = $("edge"); e.classList.remove("go"); void e.offsetWidth; e.classList.add("go"); }
+
+function raise(key, patch) {
+  let a = ALERTS.find((x) => x.key === key);
+  if (HIST.find((h) => h.key === key && h.closed)) return; // already handled, do not nag
+  if (!a) { a = { key, at: new Date().toISOString(), zones: [], incidentIds: [], triggers: [], ...patch }; ALERTS.unshift(a); minimized = false; flashEdge(); chime(a.level); }
+  else { for (const z of patch.zones || []) if (!a.zones.includes(z)) a.zones.push(z); for (const id of patch.incidentIds || []) if (!a.incidentIds.includes(id)) a.incidentIds.push(id); for (const t of patch.triggers || []) if (!a.triggers.includes(t)) a.triggers.push(t); if (patch.level === "hand") a.level = "hand"; if (patch.kind === "trigger" && a.kind === "hand") a.kind = "trigger"; if (patch.scan) a.scan = patch.scan; }
+  if (!HIST.find((h) => h.key === key)) HIST.unshift({ key, at: a.at, closed: false });
+  renderAlerts(); renderGrid();
+}
+
+function describe(a) {
+  const incs = a.incidentIds.map((id) => INC_BY_ID[id]).filter(Boolean);
+  const indep = incs.reduce((s, i) => s + (i.independent_count || 0), 0), mach = incs.reduce((s, i) => s + (i.machine_count || 0), 0), calls = incs.reduce((s, i) => s + i.packet_ids.length, 0);
+  const t0 = incs.length ? Math.min(...incs.map((i) => +new Date(i.first_report_at))) : null, t1 = incs.length ? Math.max(...incs.map((i) => +new Date(i.last_packet_at))) : null;
+  const target = a.target || incs[0]?.target;
+  const ev = [];
+  let kind = "NEEDS A PERSON", title = "", hint = "", cls = "", level = a.level;
+  if (a.kind === "spread") {
+    kind = "BIGGER ISSUE"; const order = [...incs].sort((x, y) => new Date(x.first_report_at) - new Date(y.first_report_at)).map((x) => x.zone_id); const zs = [...new Set([...order, ...a.zones])]; title = `${tName(target)} spreading ${zs.join(" → ")}`;
+    hint = "Same problem in neighboring zones at the same time. Treat it as one area event, not separate calls.";
+  } else if (a.kind === "scan") {
+    const s = a.scan; const mo = incs.length && incs.every(isMachineOnly);
+    kind = mo ? "ALARMS ONLY" : "UNUSUAL VOLUME"; cls = mo ? "violet" : "amber";
+    title = mo ? `${s.n} alarm activations in ${a.zones[0]} in 15 min` : `${s.n} reports in ${a.zones[0]} in 15 min`;
+    if (s.lambda) ev.push(`<span><b>${(s.n / s.lambda).toFixed(1)}x</b> this hour's normal (${s.lambda < 1 ? s.lambda.toFixed(2) : s.lambda.toFixed(1)} per 15 min, ${a.zones[0].startsWith("Z") ? "demo baseline" : "LAPD baseline"})</span>`);
+    if (s.p_tail != null) ev.push(`<span>chance by luck <b>${s.p_tail < 1e-6 ? "under 1 in a million" : "1 in " + Math.round(1 / s.p_tail).toLocaleString()}</b></span>`);
+    hint = mo ? "Machines, not people. Likely one cause (power or wind). Check one address before sending a truck to each alarm." : "More calls than this zone ever gets at this hour. Something bigger may be happening here.";
+  } else if (a.kind === "trigger") {
+    title = `${tName(target)} in ${a.zones.join(", ")} · caller said: ${a.triggers.map(trig).join(", ")}`;
+    hint = "Life-safety words on an AI-handled call. A person should take this now.";
+  } else {
+    title = `${tName(target)} in ${a.zones.join(", ")}`;
+    hint = incs[0]?.last_reason ? `Why: ${plainReason(incs[0].last_reason)}` : "";
+  }
+  if (calls) ev.unshift(...(indep ? [`<span><b>${indep}</b> independent caller${indep === 1 ? "" : "s"}</span>`] : []), ...(mach ? [`<span><b>${mach}</b> alarm activation${mach === 1 ? "" : "s"} (machines, not counted as callers)</span>`] : []), `<span><b>${calls}</b> call${calls === 1 ? "" : "s"} → <b>${Math.max(1, incs.length)}</b> line${incs.length > 1 ? "s" : ""}</span>`);
+  if (t0 && t1 && calls > 1) ev.push(`<span>within <b>${mins(t1 - t0)}</b></span>`);
+  if (a.triggers.length && a.kind !== "trigger") ev.push(`<span>heard: <b>${esc(a.triggers.map(trig).join(", "))}</b></span>`);
+  if (!cls) cls = level === "hand" ? "" : "amber";
+  return { kind, title, hint, cls, ev, incs };
+}
+
+const PRIO = { spread: 0, scan: 1, trigger: 2, hand: 3 };
+let expanded = null, minimized = false;
+function renderAlerts() {
+  ALERTS.sort((x, y) => (PRIO[x.kind] - PRIO[y.kind]) || (y.at < x.at ? -1 : 1));
+  const top = ALERTS.find((a) => a.key === expanded) || ALERTS[0];
+  const rest = ALERTS.filter((a) => a !== top);
+  const n0 = ALERTS.length; $("alertn").textContent = n0; $("alertn").style.display = n0 ? "flex" : "none";
+  if (minimized && n0) { $("alerts").innerHTML = `<div class="more" onclick="minimized=false;renderAlerts()">${n0} alert${n0 > 1 ? "s" : ""} open · show</div>`; renderHist(); return; }
+  const bars = rest.slice(0, 3).map((a) => { const d = describe(a); return `<div class="bar ${d.cls}" onclick="expanded='${esc(a.key)}';renderAlerts()"><span class="kind">${d.kind}</span><span class="bt">${esc(d.title)}</span><span class="go">open</span></div>`; }).join("");
+  $("alerts").innerHTML = (top ? [top] : []).map((a) => {
+    const d = describe(a);
+    return `<div class="alert ${d.cls}" data-key="${esc(a.key)}">
+      <div class="ah"><span class="kind">${d.kind}</span><time>${hms(a.at)}</time></div>
+      <div class="title">${esc(d.title)}</div>
+      <div class="ev">${d.ev.join("")}</div>
+      ${d.hint ? `<div class="hint">${esc(d.hint)}</div>` : ""}
+      <div class="acts">${d.incs.length ? deployButtons(d.incs) : ""}<span class="right"><button onclick="focusZones('${esc(a.key)}')">Show on grid</button><button onclick="minimized=true;renderAlerts()">Minimize</button>${d.incs.length ? `<button onclick="ackAlert('${esc(a.key)}')">Acknowledge</button>` : ""}<button onclick="dismiss('${esc(a.key)}')">Dismiss</button></span></div>
+    </div>`;
+  }).join("") + bars + (rest.length > 3 ? `<div class="more" onclick="document.getElementById('hist').scrollIntoView({behavior:'smooth'})">+${rest.length - 3} more in alert history</div>` : "");
+  renderHist();
+}
+function renderHist() {
+  $("hist").innerHTML = HIST.length ? HIST.map((h) => { const a = ALERTS.find((x) => x.key === h.key) || h.snap; if (!a) return ""; const d = describe(a); return `<div><time>${hms(h.at).slice(0, 5)}</time><span class="k" style="background:${d.cls === "violet" ? "var(--machine)" : d.cls === "amber" ? "var(--ask)" : "var(--hand)"}"></span><span>${esc(d.title)}</span><span class="st">${h.closed ? esc(h.closed) : `<a href="#" style="color:var(--ask)" onclick="reopen('${esc(h.key)}');return false">open</a>`}</span></div>`; }).join("") : `<div class="muted">No alerts yet.</div>`;
+}
+function closeAlert(key, how) { if (expanded === key) expanded = null; const a = ALERTS.find((x) => x.key === key); ALERTS = ALERTS.filter((x) => x.key !== key); const h = HIST.find((x) => x.key === key); if (h) { h.closed = how; h.snap = a; } renderAlerts(); renderGrid(); }
+function dismiss(key) { closeAlert(key, "dismissed"); }
+async function ackAlert(key) { const a = ALERTS.find((x) => x.key === key); if (a) await Promise.allSettled(a.incidentIds.map((id) => ack(id, true))); closeAlert(key, "acknowledged"); refresh(); }
+function reopen(key) { const h = HIST.find((x) => x.key === key); if (!h || !h.snap) return; h.closed = false; ALERTS.unshift(h.snap); renderAlerts(); }
+function focusZones(key) { const a = ALERTS.find((x) => x.key === key); if (!a) return; minimized = true; renderAlerts(); if (view !== "grid") document.querySelector('.tabs button[data-v="grid"]').click(); for (const z of a.zones) { tiles[z]?.classList.add("sel"); ping(z); setTimeout(() => tiles[z]?.classList.remove("sel"), 2500); } $("gridwrap").scrollIntoView({ behavior: "smooth", block: "center" }); }
+
+// ---------- actions ----------
+async function deploy(ids, unit, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  const r = await Promise.allSettled(ids.split(",").map((id) => fetch(`/incidents/${encodeURIComponent(id)}/dispatch`, { method: "POST", headers: H, body: JSON.stringify({ units: [unit], note: "from supervisor board" }) }).then((x) => { if (!x.ok) throw new Error(x.status); return x.json(); })));
+  if (r.some((x) => x.status === "rejected")) { if (btn) { btn.disabled = false; btn.textContent = "Retry " + UNITS[unit]; } return; }
+  await refresh();
+}
+async function ack(id, quiet) { await fetch(`/incidents/${encodeURIComponent(id)}/ack`, { method: "POST", headers: H, body: "{}" }); acked.add(id); if (!quiet) refresh(); }
+async function closeInc(id) { const r = await fetch(`/incidents/${encodeURIComponent(id)}/close`, { method: "POST", headers: H, body: JSON.stringify({ reason: "supervisor closed from board" }) }); if (!r.ok) { const e = await r.json().catch(() => ({})); const c = document.getElementById("card-" + id); if (c) c.querySelector(".why").textContent = e.error || "Could not close"; return; } refresh(); }
+$("surge").onclick = async () => { $("surge").disabled = true; $("surge").textContent = "Surge running…"; await fetch("/demo/surge", { method: "POST" }).catch(() => {}); setTimeout(() => { $("surge").disabled = false; $("surge").textContent = "▶ Run demo surge"; }, 5000); };
+$("alertbtn").onclick = () => { if (ALERTS.length) { renderAlerts(); $("alerts").scrollIntoView({ behavior: "smooth" }); } $("hist").scrollIntoView({ behavior: "smooth", block: "center" }); };
+
+// ---------- data ----------
+async function refresh() {
+  const [inc, win, meter, health, cbs] = await Promise.allSettled([fetch("/incidents").then((r) => r.json()), fetch("/zones/windows").then((r) => r.json()), fetch("/cost/meter").then((r) => r.json()), fetch("/health").then((r) => r.json()), fetch("/callbacks/open").then((r) => r.json())]);
+  const val = (r, f) => r.status === "fulfilled" && r.value && !r.value.error ? r.value : f;
+  INC = val(inc, INC); WIN = val(win, WIN); INC_BY_ID = Object.fromEntries(INC.map((i) => [i.id, i]));
+  const h = val(health, {}), m = val(meter, {}), cb = val(cbs, []);
+  if (h.mode != null) $("mode").textContent = `${h.mode} mode · ${h.calls_active}/${h.paid_concurrency} AI lines in use`;
+  if (m.retell_cents_today != null) $("meter").innerHTML = `<span>Retell today <b>$${(m.retell_cents_today / 100).toFixed(2)}</b></span><span>dispatcher minutes saved (est.) <b>${m.dispatcher_minutes_saved_est}</b></span>`;
+  renderGrid(); renderCards(); renderAlerts(); if (view === "map") paintMap(false);
+  $("silence").innerHTML = cb.length ? cb.map((c) => `<div><span class="k" style="background:var(--ask)"></span><span><b>${esc(c.zone_id || "??")}</b> · ${esc(tName(c.target))} · ${c.attempts} attempt${c.attempts === 1 ? "" : "s"}, last: ${esc(c.last_result)}${c.minutes_since_first_report != null ? ` · ${c.minutes_since_first_report} min since first report` : ""}</span></div>`).join("") : `<div class="muted">No open callbacks.</div>`;
+}
+let rfT = null; const soon = () => { clearTimeout(rfT); rfT = setTimeout(refresh, 200); };
+
+// ---------- live events ----------
+const COLOR = { packet_created: "var(--watch)", incident_opened: "var(--watch)", rung_changed: "var(--hand)", trigger_fired: "var(--hand)", incident_spread: "var(--ask)", scan_flagged: "var(--ask)", units_dispatched: "var(--ok)", call_flagged: "var(--machine)", transfer_started: "var(--ok)", kit_shown: "var(--muted)", callback_no_answer: "var(--ask)", dispatcher_joined: "var(--ok)", dispatcher_said: "var(--muted)" };
+const lastTrig = {};
+function line(ev) {
+  const p = ev.payload_json || {}, i = INC_BY_ID[ev.incident_id], z = p.zone_id || i?.zone_id || "", t = p.target || i?.target;
+  const where = z ? `<b>${esc(z)}</b> · ` : "";
+  switch (ev.event_type) {
+    case "packet_created": return p.source === "telemetry" ? `${where}alarm activation (machine)` : p.content_status === "none" ? `${where || "<b>no zone</b> · "}call with no usable details (counted for volume only)` : `${where}${esc(tName(t))} · new AI call`;
+    case "incident_opened": return `${where}new line: ${esc(tName(t))}`;
+    case "rung_changed": return `${where}${esc(tName(t))} moved to <b>${RUNG[p.to] || esc(p.to)}</b> (${esc(plainReason(p.reason))})`;
+    case "trigger_fired": return `${where}caller said: ${esc((p.triggers || []).map(trig).join(", "))}`;
+    case "incident_spread": return `<b>${esc((p.zones || []).join(" and "))}</b> · ${esc(tName(p.target))} spreading across neighboring zones`;
+    case "scan_flagged": return `${where}unusual volume: ${p.n} reports in 15 min`;
+    case "units_dispatched": return `${where}${esc((p.units || []).map((u) => UNITS[u] || u).join(", "))} sent by ${esc(ev.actor || "")}`;
+    case "call_flagged": return `AI call flagged for review: ${esc(p.flag)}`;
+    case "transfer_started": return `AI call handed to a dispatcher`;
+    case "kit_shown": return `${where}caller sent a safety card`;
+    case "callback_no_answer": return `${where}callback not answered`;
+    case "dispatcher_joined": return `dispatcher joined a live call`;
+    case "dispatcher_said": return `dispatcher spoke on a live call`;
+    default: return esc(ev.event_type);
+  }
+}
+function feed(ev) {
+  if (ev.event_type === "trigger_fired") { const k = ev.incident_id + (ev.payload_json?.triggers || []).join(); if (lastTrig[k]) return; lastTrig[k] = 1; }
+  const d = document.createElement("div"); d.className = "fresh";
+  d.innerHTML = `<time>${hms(ev.ts_server || new Date().toISOString())}</time><span class="k" style="background:${COLOR[ev.event_type] || "var(--muted)"}"></span><span>${line(ev)}</span>`;
+  const box = $("changes"); if (box.firstElementChild?.classList.contains("muted")) box.innerHTML = ""; box.prepend(d); while (box.children.length > 80) box.lastChild.remove();
+}
+async function onEvent(ev) {
+  const p = ev.payload_json || {};
+  if (ev.event_type === "packet_created" && p.zone_id) ping(p.zone_id);
+  if (ev.incident_id && !INC_BY_ID[ev.incident_id]) await refresh();
+  feed(ev);
+  const i = INC_BY_ID[ev.incident_id];
+  if (ev.event_type === "scan_flagged") { lambdaByZone[p.zone_id] = p.lambda; const zi = INC.filter((x) => x.zone_id === p.zone_id).map((x) => x.id); raise("scan:" + p.zone_id, { kind: "scan", level: "ask", zones: [p.zone_id], incidentIds: zi, scan: p }); }
+  if (ev.event_type === "incident_spread") { const linked = INC_BY_ID[p.linked_incident_id]; const key = "spread:" + p.target + ":" + (findSpreadKey(p) || p.zones.slice().sort()[0]); raise(key, { kind: "spread", level: "hand", target: p.target, zones: p.zones, incidentIds: [ev.incident_id, p.linked_incident_id].filter(Boolean) }); }
+  if (ev.event_type === "trigger_fired" && i) raise("inc:" + i.id, { kind: "trigger", level: "hand", target: i.target, zones: [i.zone_id], incidentIds: [i.id], triggers: p.triggers || [] });
+  if (ev.event_type === "rung_changed" && p.to === "hand" && i) raise("inc:" + i.id, { kind: "hand", level: "hand", target: i.target, zones: [i.zone_id], incidentIds: [i.id] });
+  soon();
+}
+// one alert per spreading problem: join new links onto an open spread alert for the same target that shares a zone
+function findSpreadKey(p) { const a = ALERTS.find((x) => x.kind === "spread" && x.target === p.target && p.zones.some((z) => x.zones.includes(z))); return a ? a.key.split(":").slice(2).join(":") : null; }
+
+const es = new EventSource("/events/stream");
+es.onopen = () => {}; es.onerror = () => { $("mode").textContent = "reconnecting…"; };
+["packet_created", "incident_opened", "rung_changed", "trigger_fired", "incident_spread", "scan_flagged", "transfer_started", "kit_shown", "callback_no_answer", "dispatcher_joined", "dispatcher_said", "units_dispatched", "call_flagged", "incident_closed", "acknowledged_by_human"].forEach((t) => es.addEventListener(t, (e) => { try { const ev = JSON.parse(e.data); if (t === "incident_closed" || t === "acknowledged_by_human") { soon(); return; } onEvent(ev); } catch (err) { console.warn("event", err); } }));
+
+setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" }); }, 1000);
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+{
+  "catalog_version": 1,
+  "rules": [
+    "The AI selects a card by kit_id from this catalog. It never writes, edits or extends a card at call time.",
+    "script_lines are read verbatim by the agent. display_steps are what the app shows.",
+    "Wording here is original EchoHawk wording. The authority is cited and linked; Red Cross and AHA materials are not reproduced.",
+    "Medical cards ship labeled pending qualified medical review. A missing or unapproved card never delays a transfer."
+  ],
+  "kits": [
+    {
+      "kit_id": "EH-LIGHT-001",
+      "title": "Safe Lighting During a Power Outage",
+      "mode": "tuesday",
+      "authority": "Centers for Disease Control and Prevention (power outage safety guidance)",
+      "reference_url": "https://www.cdc.gov/disasters/poweroutage/",
+      "last_source_check": "2026-10-17",
+      "medical_review": "not_required",
+      "reviewer": null,
+      "revision": 1,
+      "languages": [
+        "en",
+        "es"
+      ],
+      "offline_available": true,
+      "permissions_status": "CDC content is public domain; attribution given; no endorsement implied; wording is original",
+      "contraindications": [],
+      "requires_human": false,
+      "script_lines": [
+        "I can walk you through safe lighting while the power is out.",
+        "Find a flashlight, headlamp, or battery lantern first, and check for spare batteries or a charged power bank.",
+        "Use battery lights instead of candles or anything with an open flame.",
+        "Never run a gas generator, grill, or camp stove inside your home or garage.",
+        "If someone in the home depends on powered medical equipment, follow your backup power plan now and tell me so I can flag it."
+      ],
+      "display_steps": [
+        "Flashlight, headlamp or battery lantern first. Check spare batteries or a power bank.",
+        "Battery light, not candles or open flames.",
+        "Never run a generator, grill or camp stove indoors or in the garage.",
+        "Powered medical equipment at home? Start your backup plan and tell the line."
+      ],
+      "source_panel": "General safety information drawn from CDC power outage guidance, in our own words. Not a substitute for emergency services. Reviewed 2026-10-17.",
+      "script_lines_es": [
+        "Puedo guiarle para iluminar su casa de forma segura mientras no hay luz.",
+        "Primero busque una linterna, una lámpara de cabeza o un farol de pilas, y revise si tiene pilas de repuesto o una batería portátil cargada.",
+        "Use luces de pilas en lugar de velas o cualquier cosa con llama abierta.",
+        "Nunca use un generador de gasolina, una parrilla o una estufa de campamento dentro de la casa o del garaje.",
+        "Si alguien en la casa depende de un equipo médico eléctrico, siga ahora su plan de energía de respaldo y dígamelo para marcarlo."
+      ],
+      "display_steps_es": [
+        "Primero linterna, lámpara de cabeza o farol de pilas. Revise pilas de repuesto o batería portátil.",
+        "Luz de pilas, no velas ni llamas abiertas.",
+        "Nunca use generador, parrilla o estufa de campamento adentro ni en el garaje.",
+        "¿Equipo médico eléctrico en casa? Inicie su plan de respaldo y avise a la línea."
+      ],
+      "translation_status": "es: team translation of the original English wording, not reviewed by a certified translator"
+    },
+    {
+      "kit_id": "EH-BLEED-001",
+      "title": "Life-Threatening Bleeding, While Help Is Coming",
+      "mode": "emergency",
+      "authority": "American Red Cross (severe bleeding first aid) and American College of Surgeons STOP THE BLEED, as references",
+      "reference_url": "https://www.stopthebleed.org/",
+      "last_source_check": "2026-10-17",
+      "medical_review": "pending",
+      "reviewer": null,
+      "revision": 1,
+      "languages": [
+        "en",
+        "es"
+      ],
+      "offline_available": true,
+      "permissions_status": "Original wording; Red Cross and ACS materials are referenced, not reproduced",
+      "contraindications": [
+        "No improvised tourniquet instruction is given.",
+        "This card fires alongside a transfer to a dispatcher and never instead of one."
+      ],
+      "requires_human": true,
+      "script_lines": [
+        "I'm connecting you to a dispatcher right now. While I do, keep firm, steady pressure directly on the wound with a clean cloth or whatever you have.",
+        "Press hard and don't lift to check. Keep the pressure on until help arrives.",
+        "If you have someone with you, have them watch the person and tell you if they become less responsive."
+      ],
+      "display_steps": [
+        "Firm, steady pressure directly on the wound with a clean cloth or clothing.",
+        "Press hard. Don't lift to check. Hold until help arrives.",
+        "Have someone watch the person for changes and tell the dispatcher."
+      ],
+      "source_panel": "General first-aid information in our own words, with the American Red Cross and STOP THE BLEED as references. Pending qualified medical review. Not a substitute for emergency services.",
+      "script_lines_es": [
+        "Le estoy conectando con un despachador ahora mismo. Mientras tanto, mantenga presión firme y constante directamente sobre la herida con un paño limpio o lo que tenga a mano.",
+        "Presione fuerte y no levante para revisar. Mantenga la presión hasta que llegue la ayuda.",
+        "Si hay alguien con usted, pídale que observe a la persona y le avise si responde menos."
+      ],
+      "display_steps_es": [
+        "Presión firme y constante directamente sobre la herida con un paño limpio o ropa.",
+        "Presione fuerte. No levante para revisar. Sostenga hasta que llegue la ayuda.",
+        "Que alguien observe a la persona por cambios y se lo diga al despachador."
+      ],
+      "translation_status": "es: team translation of the original English wording, not reviewed by a certified translator"
+    },
+    {
+      "kit_id": "EH-BAG-001",
+      "title": "Build My Emergency Bag",
+      "mode": "preemptive",
+      "authority": "Ready.gov (FEMA) emergency supply checklist",
+      "reference_url": "https://www.ready.gov/kit",
+      "last_source_check": "2026-10-17",
+      "medical_review": "not_required",
+      "reviewer": null,
+      "revision": 1,
+      "languages": [
+        "en",
+        "es"
+      ],
+      "offline_available": true,
+      "permissions_status": "Federal preparedness guidance; original wording; graphics not reused",
+      "contraindications": [],
+      "requires_human": false,
+      "script_lines": [
+        "Let's build your emergency bag in five minutes.",
+        "Water for everyone for three days, and food that doesn't need cooking.",
+        "A flashlight, a battery or hand-crank radio, spare batteries, and a phone charger or power bank.",
+        "A basic first aid kit, your medications, and copies of important documents.",
+        "Write down two emergency contacts and a meeting place, and put the bag where you can grab it on the way out."
+      ],
+      "display_steps": [
+        "Water: three days for each person. Food that needs no cooking.",
+        "Flashlight, battery or hand-crank radio, spare batteries, power bank.",
+        "First aid kit, medications, copies of important documents.",
+        "Two emergency contacts and a meeting place, written down.",
+        "Keep the bag by the door you'd leave from."
+      ],
+      "source_panel": "Based on Ready.gov's emergency supply checklist, in our own words. Reviewed 2026-10-17.",
+      "script_lines_es": [
+        "Vamos a armar su mochila de emergencia en cinco minutos.",
+        "Agua para todos para tres días, y comida que no necesite cocinarse.",
+        "Una linterna, un radio de pilas o de manivela, pilas de repuesto y un cargador de teléfono o batería portátil.",
+        "Un botiquín básico, sus medicamentos y copias de documentos importantes.",
+        "Anote dos contactos de emergencia y un punto de reunión, y deje la mochila donde pueda tomarla al salir."
+      ],
+      "display_steps_es": [
+        "Agua: tres días por persona. Comida que no necesite cocinarse.",
+        "Linterna, radio de pilas o de manivela, pilas de repuesto, batería portátil.",
+        "Botiquín, medicamentos, copias de documentos importantes.",
+        "Dos contactos de emergencia y un punto de reunión, por escrito.",
+        "Deje la mochila junto a la puerta por la que saldría."
+      ],
+      "translation_status": "es: team translation of the original English wording, not reviewed by a certified translator"
+    }
+  ]
+}

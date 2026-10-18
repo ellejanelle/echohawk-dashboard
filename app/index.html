@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<title>EchoHawk</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e8eaf0; --muted:#8b93a7; --red:#ff5d5d; --amber:#ffb020; --green:#3ddc97; --blue:#5aa0ff; }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding-bottom:70px }
+  header { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px } header h1 { font-size:18px; margin:0 } .dot { width:10px; height:10px; border-radius:50%; background:var(--green) } .dot.off { background:var(--amber) }
+  header small { color:var(--muted); margin-left:auto }
+  main { padding:16px; max-width:640px; margin:0 auto } .view { display:none } .view.on { display:block }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px } .card h3 { margin:0 0 6px; font-size:16px } .card small { color:var(--muted) }
+  button { background:#232838; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:12px 14px; font-size:16px; cursor:pointer; width:100% } button.big { padding:18px; font-size:18px; font-weight:600 } button.red { background:#3a1c1c; border-color:var(--red) } button.green { background:#1c3a2c; border-color:var(--green) } button.blue { border-color:var(--blue) }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px } .stack > * { margin-bottom:10px }
+  label { display:block; color:var(--muted); font-size:13px; margin:8px 0 4px } input, select, textarea { width:100%; background:#12151c; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:16px }
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; border-top:1px solid var(--line); background:var(--panel) } nav button { border:0; border-radius:0; background:transparent; color:var(--muted); font-size:13px; padding:12px 4px } nav button.on { color:var(--text); border-top:2px solid var(--blue) }
+  ol li { margin:8px 0 } .script { background:#12151c; border-left:3px solid var(--blue); padding:10px; border-radius:6px; margin-top:8px; font-size:15px } .script p { margin:4px 0 }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); color:var(--muted) }
+  .beacon { text-align:center; padding:30px 10px } .beacon .big { height:120px; border-radius:60px } .pulse { animation: pulse 1.4s infinite } @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,93,93,.6)} 70%{box-shadow:0 0 0 24px rgba(255,93,93,0)} 100%{box-shadow:0 0 0 0 rgba(255,93,93,0)} }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size:13px; color:var(--muted); word-break:break-all }
+  .alert { border-color:var(--amber) } .alert.ok { border-color:var(--green) } .alert.bad { border-color:var(--red) }
+  .note { color:var(--muted); font-size:13px }
+</style>
+</head>
+<body>
+<header><span class="dot" id="netdot"></span><h1>EchoHawk</h1><small id="netlabel">online</small></header>
+<main>
+  <!-- HOME -->
+  <section class="view on" id="v-home">
+    <div class="card">
+      <h3>Zone <span id="zoneLabel">not set</span></h3>
+      <small>Your zone, never your address, is what leaves this phone. Set it under Me.</small>
+    </div>
+    <div class="stack">
+      <button class="big red" onclick="callLine()">Call the overflow line (911 overflow / 311)</button>
+      <button class="big" onclick="show('checkin')">Check in: tell dispatch what you see</button>
+      <button class="big blue" onclick="show('kits')">Action Kits (work offline)</button>
+      <button class="big" onclick="show('beacon')">Beacon mode</button>
+    </div>
+    <div class="card alert" id="lastAlert" style="display:none"></div>
+    <div class="card"><h3>Listen for a chirp</h3><small>Phone in airplane mode still works. Hold the phone within arm's reach of the eHawk or the laptop speaker, then tap.</small><div style="margin-top:10px"><button onclick="listen()" id="listenBtn">Listen (mic permission)</button></div><div class="mono" id="listenLog"></div></div>
+  </section>
+
+  <!-- CHECK-IN -->
+  <section class="view" id="v-checkin">
+    <div class="card"><h3>Check in</h3><small>Four questions. Sent as a report packet to the same engine the phone line feeds. Not a replacement for calling if someone is hurt.</small></div>
+    <div class="card">
+      <label>Is anyone hurt?</label><select id="ci_hurt"><option value="no">No</option><option value="yes">Yes</option><option value="unknown">Not sure</option></select>
+      <label>What do you see?</label><select id="ci_target"><option value="power">Power out</option><option value="water">Water pressure or main</option><option value="gas">Gas smell</option><option value="power_line">Downed power line</option><option value="structure_fire">Building fire</option><option value="wildfire">Brush or wildfire</option><option value="flood">Flooding</option><option value="road">Road blocked</option><option value="person">Person needs help</option><option value="unknown">Something else</option></select>
+      <label>How bad, 1 (minor) to 5 (life threatening)?</label><select id="ci_sev"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+      <label>Anything else (optional, one line)</label><input id="ci_text" placeholder="e.g. smell is strongest near the alley">
+      <div style="margin-top:12px"><button class="green" onclick="sendCheckin()">Send check-in</button></div>
+      <div class="note" id="ci_status"></div>
+    </div>
+    <div class="card"><h3>Queued while offline</h3><small id="queueLabel">0 packets waiting</small><div style="margin-top:8px"><button onclick="flushQueue()">Send queued now</button></div></div>
+  </section>
+
+  <!-- KITS -->
+  <section class="view" id="v-kits">
+    <div class="card"><h3>Action Kits</h3><small>Short, sourced steps. The app only shows cards from the approved catalog, word for word. Cards marked "pending medical review" are not medical advice.</small></div>
+    <div id="kitList"></div>
+  </section>
+
+  <!-- BEACON -->
+  <section class="view" id="v-beacon">
+    <div class="card beacon">
+      <h3>Beacon mode</h3>
+      <small>Repeats a short SOS chirp every few seconds for an eHawk or a rescuer's phone nearby. Keeps the screen dim to save battery. Only works within arm's reach: this is for rubble and dark rooms, not for reaching the city.</small>
+      <div style="margin-top:18px"><button class="big red" id="beaconBtn" onclick="toggleBeacon()">Start beacon</button></div>
+      <div class="mono" id="beaconLog"></div>
+    </div>
+  </section>
+
+  <!-- ME -->
+  <section class="view" id="v-me">
+    <div class="card">
+      <h3>Me</h3>
+      <label>My zone (district or grid cell, never an address)</label><input id="me_zone" placeholder="Z06 or 0802">
+      <label>Language I want alerts in</label><select id="me_lang"><option value="en">English</option><option value="es">Español</option><option value="ko">한국어</option><option value="zh">中文</option><option value="tl">Tagalog</option><option value="hy">Հայերեն</option><option value="vi">Tiếng Việt</option><option value="fa">فارسی</option></select>
+      <label>Household: anyone who depends on power or help to move?</label><select id="me_dependent"><option value="no">No</option><option value="yes">Yes</option></select>
+      <label>Registered contact (name, number)</label><input id="me_contact" placeholder="Maria, 213 555 0100">
+      <label>Overflow line number (set by your city)</label><input id="me_line" placeholder="+1 ...">
+      <div style="margin-top:12px"><button class="green" onclick="saveMe()">Save on this phone</button></div>
+      <small>Saved only on this device. Nothing here is uploaded unless you check in or call.</small>
+    </div>
+  </section>
+</main>
+<nav>
+  <button class="on" data-v="home" onclick="show('home')">Home</button>
+  <button data-v="checkin" onclick="show('checkin')">Check in</button>
+  <button data-v="kits" onclick="show('kits')">Kits</button>
+  <button data-v="beacon" onclick="show('beacon')">Beacon</button>
+  <button data-v="me" onclick="show('me')">Me</button>
+</nav>
+
+<script src="/vendor/ggwave.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s||"").replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const S = (k, v) => { try { v === undefined ? null : localStorage.setItem(k, JSON.stringify(v)); return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+const me = () => S("me") || {};
+function show(v) { document.querySelectorAll(".view").forEach((x) => x.classList.toggle("on", x.id === `v-${v}`)); document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.v === v)); }
+function net() { $("netdot").classList.toggle("off", !navigator.onLine); $("netlabel").textContent = navigator.onLine ? "online" : "offline: kits and chirp still work"; }
+addEventListener("online", () => { net(); flushQueue(); }); addEventListener("offline", net); net();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js").catch(() => {});
+
+// ---- Me ----
+function loadMe() { const m = me(); $("me_zone").value = m.zone || ""; $("me_lang").value = m.lang || "en"; $("me_dependent").value = m.dependent || "no"; $("me_contact").value = m.contact || ""; $("me_line").value = m.line || ""; $("zoneLabel").textContent = m.zone || "not set"; }
+function saveMe() { S("me", { zone: $("me_zone").value.trim().toUpperCase(), lang: $("me_lang").value, dependent: $("me_dependent").value, contact: $("me_contact").value, line: $("me_line").value }); loadMe(); show("home"); }
+function callLine() { const n = me().line; if (!n) { alert("Set the overflow line number under Me. In a real deployment the city sets this."); show("me"); return; } location.href = `tel:${n}`; }
+loadMe();
+
+// ---- Check-in (POST /packets, queue when offline) ----
+const deviceId = S("device_id") || S("device_id", "app-" + Math.random().toString(36).slice(2, 10));
+async function sendCheckin() {
+  const m = me(); if (!m.zone) { $("ci_status").textContent = "Set your zone under Me first."; return; }
+  const hurt = $("ci_hurt").value; const sev = Number($("ci_sev").value);
+  const pkt = { source: "app", identifier: deviceId, zone_id: m.zone, target: $("ci_target").value, severity: hurt === "yes" ? Math.max(sev, 4) : sev, action: hurt === "yes" ? "dispatch_ems" : (sev >= 4 ? "welfare_check" : "info_only"), language: m.lang || "en", provenance: "firsthand", text: $("ci_text").value, dependent_in_household: m.dependent === "yes", ts_device: new Date().toISOString() };
+  const q = S("queue") || []; q.push(pkt); S("queue", q); $("ci_status").textContent = "Queued."; await flushQueue();
+  if (hurt === "yes") $("ci_status").textContent += " Someone is hurt: call the line too.";
+}
+async function flushQueue() {
+  let q = S("queue") || []; $("queueLabel").textContent = `${q.length} packets waiting`; if (!q.length) return;
+  if (!navigator.onLine) { $("ci_status").textContent = `Offline. ${q.length} queued; will send when back online.`; return; }
+  const rest = [];
+  for (const p of q) { try { const r = await fetch("/packets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(p) }); if (!r.ok) throw new Error(); const j = await r.json(); $("ci_status").textContent = `Sent. Dispatch sees it as ${j.rung} in zone ${p.zone_id}.`; } catch { rest.push(p); } }
+  S("queue", rest); $("queueLabel").textContent = `${rest.length} packets waiting`;
+}
+flushQueue();
+
+// ---- Kits (cached in localStorage so they open with no network) ----
+async function loadKits() {
+  let cat = S("kits");
+  try { const r = await fetch("/kits"); if (r.ok) { cat = await r.json(); S("kits", cat); } } catch {}
+  if (!cat) { $("kitList").innerHTML = `<div class="card"><small>Open once while online to cache the kit catalog.</small></div>`; return; }
+  $("kitList").innerHTML = (cat.kits||[]).map((k) => `<div class="card"><h3>${esc(k.title)}</h3><span class="badge">${esc(k.kit_id)}</span> <span class="badge">${esc(k.mode)}</span> <span class="badge">${k.medical_review === "pending" ? "pending medical review" : "review: " + esc(k.medical_review)}</span>${k.requires_human ? ` <span class="badge" style="border-color:var(--red)">call a person too</span>` : ""}<ol>${(k.display_steps || []).map((s) => `<li>${esc(s)}</li>`).join("")}</ol><div class="script">${(k.script_lines || []).map((l) => `<p>${esc(l)}</p>`).join("")}</div><small>Source: ${esc(k.authority || "")}${k.reference_url ? ` · <a href="${k.reference_url}" style="color:var(--blue)">reference</a>` : ""} · checked ${esc(k.last_source_check || "unverified")}</small></div>`).join("");
+}
+loadKits();
+
+// ---- Chirp receive (ggwave) and frame verify (WebCrypto HMAC-SHA256, 40-bit tag) ----
+const TARGET_CODES = ["unknown","power","water","gas","power_line","structure_fire","wildfire","road","flood","person","vehicle"];
+const ACTION_CODES = ["unknown","dispatch_ems","dispatch_fire","dispatch_police","welfare_check","info_only","deflect_311","shelter_in_place","evacuate","all_clear"];
+const LANG_CODES = ["en","es","ko","zh","tl","hy","vi","fa"];
+const TYPES = ["directive","checkin","sos","ack"];
+const EPOCH_MS = Date.UTC(2025, 0, 1);
+// Demo verify key. Matches the server default ECHOHAWK_FRAME_KEY. In production the app ships an agency verify key.
+const FRAME_KEY = "dev-frame-key";
+const SAY = { shelter_in_place: { en: "Shelter in place. Close windows and doors. Stay inside until the all clear.", es: "Refúgiese en el lugar. Cierre ventanas y puertas. Quédese adentro hasta el aviso de fin." }, evacuate: { en: "Evacuate now. Take your bag and your people. Leave the zone.", es: "Evacúe ahora. Tome su mochila y a su gente. Salga de la zona." }, all_clear: { en: "All clear. You can return to normal activity.", es: "Fin de la alerta. Puede volver a la actividad normal." }, info_only: { en: "Information notice. Check the Kits tab.", es: "Aviso informativo. Revise la pestaña de Kits." } };
+let maxSeq = -1;
+async function verifyFrame(bytes) {
+  if (bytes.length !== 16) return { ok: false, error: "bad length" };
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(FRAME_KEY), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, bytes.slice(0, 11))).slice(0, 5);
+  if (!mac.every((b, i) => b === bytes[11 + i])) return { ok: false, error: "signature invalid" };
+  const seq = (bytes[9] << 8) | bytes[10]; if (seq <= maxSeq) return { ok: false, error: "replay rejected" }; maxSeq = seq;
+  return { ok: true, type: TYPES[bytes[0] & 0x0f], zone: (bytes[1] << 8) | bytes[2], target: TARGET_CODES[bytes[3] >> 4], severity: bytes[3] & 0x0f, action: ACTION_CODES[bytes[4] >> 4], language: LANG_CODES[bytes[4] & 0x0f], issuedAt: new Date(EPOCH_MS + (((bytes[5] << 24) | (bytes[6] << 16) | (bytes[7] << 8) | bytes[8]) >>> 0) * 60000).toISOString(), sequence: seq };
+}
+function speak(text, lang) { try { const u = new SpeechSynthesisUtterance(text); u.lang = lang === "es" ? "es-MX" : "en-US"; speechSynthesis.speak(u); } catch {} }
+async function onFrame(bytes) {
+  const f = await verifyFrame(bytes); const box = $("lastAlert"); box.style.display = "block";
+  if (!f.ok) { box.className = "card alert bad"; box.innerHTML = `<h3>Chirp received, not trusted</h3><small>${esc(f.error)}. Nothing is shown or spoken from an unsigned or replayed frame.</small>`; return; }
+  const lang = me().lang || f.language; const line = (SAY[f.action] || SAY.info_only)[lang] || (SAY[f.action] || SAY.info_only).en;
+  box.className = "card alert ok"; box.innerHTML = `<h3>${esc(f.action.replace(/_/g, " ").toUpperCase())} · zone ${f.zone}</h3><p>${esc(line)}</p><small>${esc(f.target)} · severity ${f.severity} · signed directive #${f.sequence} issued ${esc(f.issuedAt.slice(11, 16))} UTC · verified on this phone, no network</small>`;
+  speak(line, lang); if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+// ggwave: fixed 16-byte payload so the receiver knows the frame boundary. Protocol 1 = audible fast (demo). Ultrasound protocols are quieter but shorter range.
+let gg = null, ggInstance = null, audioCtx = null;
+async function ggInit() { if (gg) return; gg = await ggwave_factory(); const p = gg.getDefaultParameters(); p.sampleRateInp = 48000; p.sampleRateOut = 48000; p.payloadLength = 16; ggInstance = gg.init(p); }
+function convertTypedArray(src, type) { const buffer = new ArrayBuffer(src.byteLength); new src.constructor(buffer).set(src); return new type(buffer); }
+async function listen() {
+  await ggInit(); audioCtx ||= new AudioContext({ sampleRate: 48000 });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false } });
+  const src = audioCtx.createMediaStreamSource(stream); const node = audioCtx.createScriptProcessor(1024, 1, 1);
+  $("listenBtn").textContent = "Listening…"; $("listenLog").textContent = "";
+  node.onaudioprocess = (e) => { const res = gg.decode(ggInstance, convertTypedArray(new Float32Array(e.inputBuffer.getChannelData(0)), Int8Array)); if (res && res.length) { const bytes = new Uint8Array(res); $("listenLog").textContent = `frame: ${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`; onFrame(bytes); } };
+  src.connect(node); node.connect(audioCtx.destination);
+}
+// ---- Beacon: SOS frame every 4 s. Type sos, zone from Me, target person, severity 5, action dispatch_ems. Signed with the demo key. ----
+let beaconTimer = null, beaconSeq = Math.floor(Math.random() * 60000);
+async function signFrame(fields) {
+  const b = new Uint8Array(16); b[0] = (1 << 4) | TYPES.indexOf(fields.type); b[1] = fields.zone >> 8; b[2] = fields.zone & 0xff; b[3] = (TARGET_CODES.indexOf(fields.target) << 4) | fields.severity; b[4] = (ACTION_CODES.indexOf(fields.action) << 4) | LANG_CODES.indexOf(fields.language);
+  const mins = Math.floor((Date.now() - EPOCH_MS) / 60000) >>> 0; b[5] = mins >>> 24; b[6] = (mins >>> 16) & 0xff; b[7] = (mins >>> 8) & 0xff; b[8] = mins & 0xff; b[9] = fields.sequence >> 8; b[10] = fields.sequence & 0xff;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(FRAME_KEY), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, b.slice(0, 11))); b.set(mac.slice(0, 5), 11); return b;
+}
+async function chirp(bytes) { await ggInit(); audioCtx ||= new AudioContext({ sampleRate: 48000 }); const wave = gg.encode(ggInstance, bytes, gg.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST, 10); const buf = convertTypedArray(new Int8Array(wave), Float32Array); const ab = audioCtx.createBuffer(1, buf.length, 48000); ab.getChannelData(0).set(buf); const s = audioCtx.createBufferSource(); s.buffer = ab; s.connect(audioCtx.destination); s.start(0); }
+async function toggleBeacon() {
+  if (beaconTimer) { clearInterval(beaconTimer); beaconTimer = null; $("beaconBtn").textContent = "Start beacon"; $("beaconBtn").classList.remove("pulse"); $("beaconLog").textContent = "stopped"; return; }
+  const zone = parseInt(String(me().zone || "0").replace(/\D/g, ""), 10) || 0;
+  const tick = async () => { const f = await signFrame({ type: "sos", zone, target: "person", severity: 5, action: "dispatch_ems", language: me().lang || "en", sequence: ++beaconSeq & 0xffff }); await chirp(f); $("beaconLog").textContent = `SOS #${beaconSeq} chirped ${new Date().toLocaleTimeString()}`; };
+  await tick(); beaconTimer = setInterval(tick, 4000); $("beaconBtn").textContent = "Stop beacon"; $("beaconBtn").classList.add("pulse");
+}
+</script>
+</body>
+</html>

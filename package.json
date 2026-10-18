@@ -1,0 +1,26 @@
+{
+  "name": "echohawk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EchoHawk: AI intake and corroboration layer for overloaded 911 and non-emergency lines, with an off-grid household alert path.",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test server/test/*.test.js",
+    "seed": "node server/seed.js",
+    "provision": "node server/provision_retell.js",
+    "fake-call": "node server/fake_retell_client.js",
+    "build:web": "npm --prefix web install && npm --prefix web run build",
+    "dev:web": "npm --prefix web run dev"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "retell-sdk": "^6.2.7"
+  }
+}

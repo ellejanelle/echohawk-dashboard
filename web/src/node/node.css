@@ -1,0 +1,19 @@
+.nodepage { min-height: 100vh; background: var(--bg, #0b111a); color: var(--text, #e7edf3); font-family: inherit; }
+.nodehead { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--line, #1e2a36); }
+.nodehead b { font-size: 16px; } .nodehead .sim { font-size: 12px; color: var(--muted, #8b98a5); }
+.nodehead select { margin-left: auto; background: #121b25; color: inherit; border: 1px solid #2a3542; border-radius: 8px; padding: 6px 10px; }
+.nodegrid { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 16px; padding: 16px 20px; }
+@media (max-width: 800px) { .nodegrid { grid-template-columns: 1fr; } }
+.npanel { background: #111a24; border: 1px solid #1e2a36; border-radius: 14px; padding: 16px; }
+.npanel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted, #8b98a5); margin: 0 0 12px; }
+.nbtn { display: block; width: 100%; margin-bottom: 10px; padding: 12px; border-radius: 10px; border: 1px solid #3cc7b4; background: transparent; color: #3cc7b4; font-weight: 600; cursor: pointer; text-align: left; }
+.nbtn.on { background: rgba(60, 199, 180, .12); }
+.nhint { font-size: 12.5px; color: var(--muted, #8b98a5); line-height: 1.5; }
+.chain { margin-top: 14px; display: grid; gap: 8px; }
+.ck { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: #0e151e; color: #8b98a5; font-size: 14px; }
+.ck span { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #1e2a36; font-size: 12px; }
+.ck.ok { color: #e7edf3; background: rgba(60, 199, 180, .1); } .ck.ok span { background: #3cc7b4; color: #0b111a; }
+.cklast { font-size: 12.5px; color: var(--muted, #8b98a5); margin-top: 4px; }
+.nlog { display: grid; gap: 4px; max-height: 70vh; overflow: auto; font-size: 13px; }
+.nl { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; } .nl time { color: #8b98a5; flex: none; font-variant-numeric: tabular-nums; }
+.nl.in { background: rgba(76, 156, 240, .08); } .nl.out { background: rgba(60, 199, 180, .08); } .nl.net { background: rgba(255, 255, 255, .03); } .nl.warn { background: rgba(229, 72, 77, .1); }

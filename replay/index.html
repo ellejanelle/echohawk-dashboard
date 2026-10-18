@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoHawk Replay</title>
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/board/map.js"></script>
+<style>
+  :root { --bg:#0f1115; --panel:#161a22; --panel2:#1c212b; --line:#262b36; --text:#e8eaf0; --muted:#8b93a7; --dim:#5d6578;
+    --hand:#ff5d5d; --ask:#ffb020; --watch:#5aa0ff; --ok:#3ddc97; --machine:#8b6cff; --crime:#6b7488; --ticket:#3a4150; }
+  * { box-sizing:border-box } html, body { height:100% }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; display:flex; flex-direction:column }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:10px 22px; border-bottom:1px solid var(--line) }
+  header h1 { font-size:15px; margin:0; letter-spacing:.3px } header h1 b { color:var(--ok) }
+  .spacer { flex:1 } .muted { color:var(--muted) } .small { font-size:12px }
+  select, button { background:#232838; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px 11px; font:inherit; font-size:13px; cursor:pointer }
+  button:hover { border-color:#4a5368 }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden } .seg button { border:0; border-radius:0; background:transparent; color:var(--muted) } .seg button.on { background:#2a3142; color:var(--text) }
+
+  /* ---------- story ---------- */
+  #story { flex:1; display:flex; flex-direction:column; padding:18px 40px 10px; min-height:0 }
+  .kicker { color:var(--ok); font-size:13px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600 }
+  .headline { font-size:38px; line-height:1.15; font-weight:700; margin:6px 0 6px; max-width:1200px; letter-spacing:-.4px }
+  .sub { font-size:18px; color:#b9c0d0; max-width:1150px; margin:0 0 14px }
+  .stage { flex:1; min-height:0; display:flex; gap:22px }
+  .navbar { display:flex; align-items:center; gap:14px; padding:10px 0 4px }
+  .navbar button { font-size:15px; padding:9px 18px } .navbar .next { border-color:var(--ok); color:var(--ok) }
+  .dots { display:flex; gap:8px } .dots span { width:10px; height:10px; border-radius:50%; background:#2f3646; cursor:pointer } .dots span.on { background:var(--ok) }
+  .col { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px }
+  .col h3 { margin:0 0 4px; font-size:13px; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); font-weight:600 }
+  .col.left h3 { color:#aab1c2 } .col.right h3 { color:var(--ok) }
+  .big { font-size:64px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-1px }
+  .bigl { color:#c9cede } .bigr { color:var(--ok) }
+  .cap { color:var(--muted); font-size:14px; margin-top:4px }
+
+  .wall { display:flex; flex-wrap:wrap; gap:2px; margin-top:12px; flex:none; align-content:flex-start; overflow:hidden }
+  .chip { width:10px; height:10px; border-radius:2px; background:var(--ticket); transition: background .5s, opacity .5s, transform .5s }
+  .chip.hidden { opacity:0; transform:scale(.3) }
+  .chip.crime { background:var(--crime) } .chip.machine { background:var(--machine) } .chip.group { background:var(--ok) } .chip.flag { background:var(--watch); box-shadow:0 0 0 2px #9cc4ff } .chip.single { background:#4b5466 }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; font-size:14px; color:#c3c9d6 } .legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px }
+  .rows { margin-top:10px; display:grid; gap:4px }
+  .row { display:grid; grid-template-columns: 90px 1fr; gap:12px; align-items:baseline } .row b { font-size:24px; font-variant-numeric:tabular-nums; text-align:right } .row span { color:#c3c9d6 }
+
+  .queue { flex:1; overflow:hidden; display:flex; flex-direction:column; gap:5px; margin-top:10px }
+  .tk { display:grid; grid-template-columns:52px 74px 54px 1fr; gap:10px; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:15px; animation: drop .35s ease-out }
+  .tk .n { color:var(--dim); font-variant-numeric:tabular-nums } .tk .t { color:var(--muted); font-variant-numeric:tabular-nums } .tk .rd { color:#c9cede; font-weight:600 }
+  .tk.hl { border-color:var(--machine); background:#231d3d } .tk.hlp { border-color:var(--ask); background:#33280f }
+  .tk.gap { background:transparent; border-style:dashed; color:var(--muted); grid-template-columns:1fr; text-align:center }
+  @keyframes drop { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:none } }
+
+  .card { background:var(--panel2); border:2px solid var(--line); border-radius:14px; padding:16px 18px; margin-top:10px; transition: border-color .4s, box-shadow .4s }
+  .card.flagged { border-color:var(--watch); box-shadow:0 0 0 4px rgba(90,160,255,.18), 0 0 40px rgba(90,160,255,.25) }
+  .card .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap } .card .rdn { font-size:26px; font-weight:800 }
+  .card .count { font-size:84px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; margin:10px 0 2px }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:13px; font-weight:700; color:#0f1115 } .pill.hand{background:var(--hand)} .pill.ask{background:var(--ask)} .pill.watch{background:var(--watch)}
+  .tag { font-size:13px; border:1px solid var(--line); border-radius:999px; padding:2px 10px; color:var(--muted) } .tag.machine { border-color:var(--machine); color:#c4b5ff } .tag.flag { border-color:var(--watch); color:#9cc4ff } .tag.ind { border-color:var(--ok); color:var(--ok) }
+  .banner { margin-top:14px; border-radius:12px; padding:14px 16px; background:#12233f; border:1px solid var(--watch); color:#d8e7ff; font-size:17px; opacity:0; transform:translateY(6px); transition: all .5s }
+  .banner.show { opacity:1; transform:none } .banner b { color:#fff }
+  .mini { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--muted); padding:6px 0; border-bottom:1px dashed var(--line) }
+  .bars { display:grid; gap:7px; margin-top:12px } .bar { display:grid; grid-template-columns: 170px 1fr 44px; gap:10px; align-items:center; font-size:14px } .bar .fill { height:16px; border-radius:4px; background:var(--machine) } .bar .v { text-align:right; font-variant-numeric:tabular-nums; color:#c9cede }
+  #smap { flex:1; min-height:260px; border-radius:10px; margin-top:10px }
+  .honest { font-size:19px; line-height:1.5; color:#c9cede } .honest li { margin:8px 0 } .honest b { color:#fff }
+  .cta { margin-top:18px; font-size:17px; padding:12px 22px; border-color:var(--ok); color:var(--ok) }
+
+  /* ---------- free play ---------- */
+  #free { flex:1; display:none; flex-direction:column; padding:12px 22px 10px; gap:12px; min-height:0 }
+  .fpbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap } .clock { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; min-width:80px }
+  button.play { border-color:var(--ok); color:var(--ok); min-width:92px }
+  #chart { width:100%; height:150px; background:var(--panel); border:1px solid var(--line); border-radius:12px; cursor:pointer; display:block }
+  .fpcols { flex:1; min-height:0; display:grid; grid-template-columns: 1fr 1fr; gap:14px }
+  .fpcols .col { overflow:hidden }
+  .count2 { font-size:40px; font-weight:800; font-variant-numeric:tabular-nums }
+  .ln { border:1px solid var(--line); border-radius:10px; padding:9px 12px; margin-bottom:8px; background:var(--panel2) } .ln.flagged { border-color:var(--watch) }
+  .ln .top { display:flex; gap:8px; align-items:center; flex-wrap:wrap } .ln .why { color:var(--muted); font-size:13px; margin-top:3px }
+  .scroll { overflow:auto; flex:1; margin-top:8px }
+  footer { padding:6px 22px 10px; color:var(--dim); font-size:12px }
+  @media (max-width: 1000px) { .stage, .fpcols { flex-direction:column; display:flex } .headline { font-size:28px } #story { padding:14px 16px } }
+</style>
+</head>
+<body>
+<header>
+  <h1>EchoHawk Replay · <span class="muted">a real LA night</span>, as it happened vs. <b>with EchoHawk</b></h1>
+  <span class="spacer"></span>
+  <select id="day" aria-label="Day"></select>
+  <select id="window" aria-label="Hours"><option value="15-24">3 PM to midnight</option><option value="18-22">6 PM to 10 PM</option><option value="0-24">Full day</option></select>
+  <div class="seg"><button id="mStory" class="on">Story</button><button id="mFree">Free play</button></div>
+</header>
+
+<section id="story">
+  <div class="kicker" id="kicker"></div>
+  <div class="headline" id="headline">Loading the night…</div>
+  <p class="sub" id="sub"></p>
+  <div class="stage" id="stage"></div>
+  <div class="navbar"><button id="back">← Back</button><div class="dots" id="dots"></div><button class="next" id="next">Next →</button><span class="spacer"></span><span class="muted small">Arrow keys work too</span></div>
+</section>
+
+<section id="free">
+  <div class="fpbar">
+    <button class="play" id="play">▶ Play</button>
+    <select id="speed"><option value="120">2 min per second</option><option value="300" selected>5 min per second</option><option value="900">15 min per second</option></select>
+    <div class="clock" id="clock">--:--</div>
+    <span class="muted small">Grey bars: tickets dispatch read per 15 minutes. Green: EchoHawk lines asking a person to look. Blue marks: baseline flags. Click the chart to jump.</span>
+  </div>
+  <svg id="chart" preserveAspectRatio="none"></svg>
+  <div class="fpcols">
+    <div class="col left"><h3>Dispatcher's view · as it happened</h3><div><span class="count2" id="fCalls">0</span> <span class="muted">separate tickets so far, read one at a time, newest on top</span></div><div class="queue scroll" id="fQueue"></div></div>
+    <div class="col right"><h3>Supervisor's view · with EchoHawk</h3><div id="fSum" class="muted"></div><div class="scroll" id="fLines"></div></div>
+  </div>
+</section>
+<footer id="source"></footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const secs = (t) => { const [h, m, s] = t.split(":").map(Number); return h * 3600 + m * 60 + (s || 0); };
+const hhmm = (x) => `${String(Math.floor(x / 3600) % 24).padStart(2, "0")}:${String(Math.floor(x / 60) % 60).padStart(2, "0")}`;
+const fmtP = (p) => { if (!p) return "n/a"; const e = Math.floor(Math.log10(p)); const m = p / 10 ** e; return `${m.toFixed(1)} × 10<sup>${e}</sup>`; };
+const ago = (a, b) => { const d = Math.round(secs(b) - secs(a)); return d < 120 ? `${d} seconds` : d < 7200 ? `${Math.round(d / 60)} minutes` : `${(d / 3600).toFixed(1)} hours`; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let D = null, S = null, chapter = 0, token = 0, MAPS = [];
+
+// ---------- derive everything the story says from the replay data ----------
+function derive(d) {
+  const F = d.frames, I = d.incidents;
+  const firstOf = {}; for (const f of F) if (f.incident && !(f.incident in firstOf)) firstOf[f.incident] = f.n;
+  const isItem = (f) => f.passthrough || !f.incident || firstOf[f.incident] === f.n;
+  const items = F.filter(isItem).length;
+  const crimes = F.filter((f) => f.passthrough);
+  const machine = F.filter((f) => f.machine);
+  const machineLines = new Set(machine.map((f) => f.incident)).size;
+  const grouped = I.filter((i) => i.size > 1);
+  const groupedCalls = grouped.reduce((a, i) => a + i.size, 0);
+  const flagged = I.filter((i) => i.flag);
+  const flagRDs = new Set(d.flags.map((f) => f.zone_id));
+  // chapter 2: the flagged line with the biggest burst around its flag
+  let burst = null;
+  for (const i of flagged) {
+    const ft = secs(i.flag.t);
+    const near = F.filter((f) => f.incident === i.id && Math.abs(secs(f.t) - ft) <= 600);
+    if (!burst || near.length > burst.near.length) burst = { inc: i, near };
+  }
+  if (burst) {
+    const lo = Math.max(1, burst.near[0].n - 8), hi = Math.min(F.length, burst.near.at(-1).n + 2);
+    burst.range = F.slice(lo - 1, hi);
+    burst.k = burst.near.findIndex((f) => f.n === burst.inc.flag.ticket) + 1;
+    burst.lastT = burst.near.at(-1).t;
+  }
+  // chapter 3: the area with the most machine activations
+  const byArea = {}; for (const f of machine) (byArea[f.area] ||= []).push(f);
+  const topArea = Object.entries(byArea).sort((a, b) => b[1].length - a[1].length)[0];
+  let wave = null;
+  if (topArea) { const rds = {}; for (const f of topArea[1]) rds[f.rd] = (rds[f.rd] || 0) + 1; wave = { area: topArea[0], n: topArea[1].length, rds: Object.entries(rds).sort((a, b) => b[1] - a[1]), lines: new Set(topArea[1].map((f) => f.incident)).size }; }
+  // chapter 4: people calling about the same thing, closest together in time
+  const people = I.filter((i) => i.independent >= 2 && i.machine === 0 && i.target !== "crime").map((i) => ({ i, span: secs(i.last) - secs(i.opened) })).sort((a, b) => a.span - b.span)[0];
+  let pair = null;
+  if (people) { const fs = F.filter((f) => f.incident === people.i.id); pair = { inc: people.i, fs, between: fs.at(-1).n - fs[0].n - 1 }; }
+  // chapter 5: crime types
+  const ct = {}; for (const f of crimes) ct[f.type] = (ct[f.type] || 0) + 1;
+  const crimeTypes = Object.entries(ct).sort((a, b) => b[1] - a[1]);
+  return { F, I, items, crimes, machine, machineLines, grouped, groupedCalls, flagged, flagRDs, burst, wave, pair, crimeTypes, isItem, firstOf };
+}
+
+// ---------- chapters ----------
+const CH = [
+  { id: "numbers", show: () => true,
+    head: () => `${D.totals.calls} calls reached dispatch. Every one was its own ticket.`,
+    sub: () => `${hhmm(D.fromHour * 3600)} to ${D.toHour === 24 ? "midnight" : hhmm(D.toHour * 3600)} on ${D.date}, LAPD calls for service. On the left, the night the way a dispatcher saw it. On the right, the same calls sorted by EchoHawk.`,
+    render: renderNumbers },
+  { id: "pattern", show: () => !!S.burst,
+    head: () => `RD ${S.burst.inc.rd} rang ${S.burst.near.length} times in ${ago(S.burst.near[0].t, S.burst.lastT)}. EchoHawk flagged it at ticket ${S.burst.k}.`,
+    sub: () => `Watch the queue fill. To a dispatcher these look like any other tickets. EchoHawk stacks them into one line and checks the count against this district's own LAPD history for this hour.`,
+    render: renderPattern },
+  { id: "machines", show: () => !!S.wave,
+    head: () => `${S.machine.length} alarm activations. EchoHawk counted zero of them as people calling.`,
+    sub: () => `${S.wave.n} of them were in ${esc(S.wave.area)}, across ${S.wave.rds.length} reporting districts. EchoHawk labels every alarm as a machine source, so a wave of ringers never looks like a crowd of witnesses.`,
+    render: renderMachines },
+  { id: "pair", show: () => !!S.pair,
+    head: () => `${S.pair.inc.independent} separate callers, ${ago(S.pair.fs[0].t, S.pair.fs.at(-1).t)} apart, same district, same kind of call: ${S.pair.inc.call_types.join(" / ")}.`,
+    sub: () => `In the queue, nothing on either ticket links them. EchoHawk puts them on one line with ${S.pair.inc.independent} independent callers, and that count is what moves a line up the ladder.`,
+    render: renderPair },
+  { id: "crimes", show: () => S.crimes.length > 0,
+    head: () => `${S.crimes.length} individual crime calls went straight through, unchanged.`,
+    sub: () => `EchoHawk does not merge or delay a single report of a crime. Those stay one call, one ticket, dispatched as usual. Grouping is only for area events: alarms, injuries, hazards, fires.`,
+    render: renderCrimes },
+  { id: "honest", show: () => true,
+    head: () => `What this replay shows, and what it does not.`,
+    sub: () => ``,
+    render: renderHonest },
+];
+const live = () => CH.filter((c) => c.show());
+
+async function go(i) {
+  const L = live(); chapter = Math.max(0, Math.min(L.length - 1, i)); const c = L[chapter]; const my = ++token;
+  MAPS.forEach((m) => m.map.remove()); MAPS = [];
+  $("kicker").textContent = `Chapter ${chapter + 1} of ${L.length}`;
+  $("headline").textContent = c.head(); $("sub").innerHTML = c.sub(); $("stage").innerHTML = "";
+  $("dots").innerHTML = L.map((_, k) => `<span class="${k === chapter ? "on" : ""}" data-k="${k}"></span>`).join("");
+  $("back").disabled = chapter === 0; $("next").textContent = chapter === L.length - 1 ? "Free play →" : "Next →";
+  await c.render(my);
+}
+const alive = (my) => my === token;
+
+async function countUp(el, to, ms, my) { const t0 = performance.now(); while (alive(my)) { const k = Math.min(1, (performance.now() - t0) / ms); el.textContent = Math.round(to * (1 - (1 - k) ** 3)); if (k >= 1) break; await sleep(16); } }
+
+async function renderNumbers(my) {
+  const F = S.F;
+  const incOf = {}; for (const i of S.I) incOf[i.id] = i;
+  const cat = (f) => { if (f.passthrough) return "crime"; const i = incOf[f.incident]; if (!i) return "single"; if (i.flag) return "flag"; if (i.machine) return "machine"; return i.size > 1 ? "group" : "single"; };
+  const order = { flag: 0, group: 1, machine: 2, single: 3, crime: 4 };
+  const sorted = F.filter(S.isItem).sort((a, b) => order[cat(a)] - order[cat(b)] || a.n - b.n);
+  const needPerson = S.I.filter((i) => !i.machine && (i.rung === "hand" || i.rung === "ask")).length;
+  $("stage").innerHTML = `
+    <div class="col left"><h3>As it happened</h3><div><span class="big bigl" id="nL">0</span></div><div class="cap">separate tickets, one per call, read in arrival order</div><div class="wall" id="wL">${F.map(() => `<i class="chip hidden"></i>`).join("")}</div></div>
+    <div class="col right"><h3>With EchoHawk</h3><div><span class="big bigr" id="nR">0</span></div><div class="cap">items after grouping, one chip per line or ticket, sorted by what it is</div><div class="wall" id="wR">${sorted.map((f) => `<i class="chip hidden" data-c="${cat(f)}"></i>`).join("")}</div>
+      <div class="legend"><span><i style="background:var(--watch)"></i>flagged vs baseline</span><span><i style="background:var(--ok)"></i>grouped with other calls</span><span><i style="background:var(--machine)"></i>alarm, machine source</span><span><i style="background:#4b5466"></i>single report, watched</span><span><i style="background:var(--crime)"></i>crime, passed to dispatch</span></div>
+      <div class="rows" id="rowsR"></div></div>`;
+  const wl = [...$("wL").children], wr = [...$("wR").children];
+  countUp($("nL"), F.length, 1400, my);
+  for (let i = 0; i < wl.length && alive(my); i += 12) { wl.slice(i, i + 12).forEach((c) => c.classList.remove("hidden")); await sleep(14); }
+  await sleep(400); if (!alive(my)) return;
+  countUp($("nR"), S.items, 1400, my);
+  for (let i = 0; i < wr.length && alive(my); i += 12) { wr.slice(i, i + 12).forEach((c) => { c.classList.remove("hidden"); c.classList.add(c.dataset.c); }); await sleep(14); }
+  if (!alive(my)) return;
+  $("rowsR").innerHTML = [
+    [needPerson, "lines asking a person to look (hand or ask rung, people calling)"],
+    [S.crimes.length, "crime calls passed to dispatch unchanged"],
+    [S.machine.length, `alarm activations labeled machine, in ${S.machineLines} lines`],
+    [S.groupedCalls, `calls grouped into ${S.grouped.length} lines`],
+    [S.flagRDs.size, `districts flagged against their own LAPD baseline (${D.flags.length} flags)`],
+  ].map(([v, t]) => `<div class="row"><b>${v}</b><span>${esc(t)}</span></div>`).join("");
+}
+
+function ticket(f, cls = "") { return `<div class="tk ${cls}" data-n="${f.n}"><span class="n">#${f.n}</span><span class="t">${f.t}</span><span class="rd">${esc(f.rd)}</span><span>${esc(f.type)}</span></div>`; }
+
+async function renderPattern(my) {
+  const b = S.burst, inc = b.inc, fl = inc.flag, baseline = fl.lambda;
+  $("stage").innerHTML = `
+    <div class="col left"><h3>As it happened · dispatch queue</h3><div class="cap">Tickets ${b.range[0].n} to ${b.range.at(-1).n}, ${b.range[0].t} to ${b.range.at(-1).t}. All look the same.</div><div class="queue" id="q"></div><button id="hl" style="align-self:flex-start;margin-top:8px;visibility:hidden">Show which ones were RD ${esc(inc.rd)}</button></div>
+    <div class="col right"><h3>With EchoHawk · supervisor board</h3>
+      <div class="card" id="card"><div class="top"><span class="rdn">RD ${esc(inc.rd)}</span><span class="muted">${esc(inc.area)}</span><span class="tag machine">machine source</span><span class="tag" id="ind">0 independent callers</span><span class="tag flag" id="ftag" style="display:none">flagged ${fl.t}</span></div>
+        <div class="count" id="cnt">0</div><div class="cap" id="cntcap">activations in this burst · ${esc(inc.call_types.join(", "))}</div></div>
+      <div class="banner" id="ban"><b>Flagged at ${fl.t}</b>, ticket #${fl.ticket}, the ${b.k === 1 ? "first" : b.k === 2 ? "second" : b.k === 3 ? "third" : b.k + "th"} activation of this burst.<br>${fl.window_n} activations in one 15-minute window where LAPD history for RD ${esc(inc.rd)} at this hour expects ${baseline.toFixed(3)}. Chance of that by luck: p = ${fmtP(fl.p_tail)}.<br><span class="muted">${b.near.length - b.k} more activations arrived after the flag, over the next ${ago(fl.t, b.lastT)}.</span></div>
+      <div id="others" class="cap" style="margin-top:12px"></div>
+    </div>`;
+  const q = $("q"); let k = 0, others = 0;
+  for (const f of b.range) {
+    if (!alive(my)) return;
+    q.insertAdjacentHTML("beforeend", ticket(f)); while (q.scrollHeight > q.clientHeight + 2 && q.children.length > 1) q.firstElementChild.remove();
+    if (f.incident === inc.id && b.near.includes(f)) {
+      k++; $("cnt").textContent = k;
+      if (f.flagged) { $("card").classList.add("flagged"); $("ftag").style.display = ""; $("ban").classList.add("show"); await sleep(1600); }
+    } else { others++; $("others").textContent = `${others} other call${others > 1 ? "s" : ""} in this stretch went to dispatch as usual.`; }
+    await sleep(f.incident === inc.id ? 520 : 380);
+  }
+  if (!alive(my)) return;
+  $("hl").style.visibility = "visible"; $("hl").onclick = () => q.querySelectorAll(".tk").forEach((t) => { if (b.near.some((f) => String(f.n) === t.dataset.n)) t.classList.add("hl"); });
+}
+
+async function renderMachines(my) {
+  const w = S.wave, max = w.rds[0][1];
+  $("stage").innerHTML = `
+    <div class="col left"><h3>As it happened</h3><div><span class="big bigl">${w.n}</span></div><div class="cap">separate alarm tickets in ${esc(w.area)}, each one read and decided on its own</div><div id="smap"></div><div class="cap small" id="smapst"></div></div>
+    <div class="col right"><h3>With EchoHawk</h3><div><span class="big" style="color:var(--machine)">${w.lines}</span> <span class="cap">lines, labeled machine, 0 counted as callers</span></div>
+      <div class="bars">${w.rds.slice(0, 12).map(([rd, n]) => `<div class="bar"><span>RD ${esc(rd)}${S.flagRDs.has(rd) ? ` <span class="tag flag">flagged</span>` : ""}</span><div><div class="fill" style="width:${(n / max) * 100}%"></div></div><span class="v">${n}</span></div>`).join("")}</div>
+      <div class="cap" style="margin-top:14px">Alarm calls (radio code 906: ringers, silent alarms) are telemetry. They can trip the baseline flag and the spread check across neighboring districts, which is how a wave shows up, but they never count as independent callers.</div></div>`;
+  try {
+    const m = await EH_MAP.create($("smap"), { status: $("smapst") }); if (!alive(my)) { m.map.remove(); return; } MAPS.push(m);
+    EH_MAP.RUNG_COLOR.machine = "#8b6cff";
+    for (const [rd, n] of w.rds) m.paint(rd, { rung: "machine", flagged: S.flagRDs.has(rd), intensity: 0.25 + Math.min(0.5, n * 0.05), label: `RD ${rd} · ${n} alarm activation(s)` });
+    m.focus(w.rds.map(([rd]) => rd));
+  } catch (e) { $("smapst").textContent = "Map unavailable here; counts are on the right."; }
+}
+
+async function renderPair(my) {
+  const p = S.pair, F = S.F, a = p.fs[0].n, z = p.fs.at(-1).n;
+  const seg = [];
+  for (const f of F.slice(Math.max(0, a - 4), Math.min(F.length, z + 3))) seg.push(f);
+  const show = seg.length > 16 ? [...F.slice(Math.max(0, a - 4), a + 2), { gap: z - a - 3 }, ...F.slice(z - 2, Math.min(F.length, z + 3))] : seg;
+  $("stage").innerHTML = `
+    <div class="col left"><h3>As it happened · dispatch queue</h3><div class="cap">Two tickets, ${p.between ? `${p.between} other ticket${p.between > 1 ? "s" : ""} in between` : "back to back"}. Nothing on the ticket says they are the same event.</div><div class="queue" id="q"></div></div>
+    <div class="col right"><h3>With EchoHawk · supervisor board</h3>
+      <div class="card" id="card"><div class="top"><span class="rdn">RD ${esc(p.inc.rd)}</span><span class="muted">${esc(p.inc.area)}</span><span class="pill ${esc(p.inc.rung)}" id="rung">watch</span><span class="tag ind" id="ind">1 independent caller</span></div>
+        <div class="count" id="cnt">1</div><div class="cap">${esc(p.inc.call_types.join(", "))} · ${p.fs[0].t} to ${p.fs.at(-1).t}</div></div>
+      <div class="banner" id="ban">Second independent caller in the same district and category. The line moves to <b>${esc(p.inc.rung)}</b>: ${esc(p.inc.reason)}.</div></div>`;
+  const q = $("q");
+  for (const f of show) {
+    if (!alive(my)) return;
+    if (f.gap) { q.insertAdjacentHTML("beforeend", `<div class="tk gap">… ${f.gap} other tickets …</div>`); await sleep(500); continue; }
+    const mine = f.incident === p.inc.id;
+    q.insertAdjacentHTML("beforeend", ticket(f));
+    if (mine && f.n !== a) { await sleep(300); $("cnt").textContent = p.fs.findIndex((x) => x.n === f.n) + 1; $("ind").textContent = `${p.inc.independent} independent callers`; $("rung").className = `pill ${p.inc.rung}`; $("rung").textContent = p.inc.rung; $("card").classList.add("flagged"); $("ban").classList.add("show"); }
+    else if (mine) { $("rung").textContent = "watch"; }
+    await sleep(mine ? 900 : 420);
+  }
+  await sleep(600); if (!alive(my)) return;
+  q.querySelectorAll(".tk").forEach((t) => { if (p.fs.some((f) => String(f.n) === t.dataset.n)) t.classList.add("hlp"); });
+}
+
+async function renderCrimes(my) {
+  const top = S.crimeTypes.slice(0, 10), max = top[0][1];
+  $("stage").innerHTML = `
+    <div class="col left"><h3>As it happened</h3><div><span class="big bigl">${S.crimes.length}</span></div><div class="cap">crime tickets</div>
+      <div class="bars">${top.map(([t, n]) => `<div class="bar"><span>${esc(t)}</span><div><div class="fill" style="background:var(--crime);width:${(n / max) * 100}%"></div></div><span class="v">${n}</span></div>`).join("")}</div></div>
+    <div class="col right"><h3>With EchoHawk</h3><div><span class="big bigl">${S.crimes.length}</span></div><div class="cap">crime tickets, the same number, the same order</div>
+      <div class="honest" style="margin-top:16px;font-size:17px">A crime report is about one victim and one scene. Merging it with a neighbor's call could hide a second crime, so EchoHawk passes each one to dispatch as its own ticket, exactly as it arrived.<br><br><span class="muted">Call types grouped as crime here: everything that is not an alarm, injury, traffic, hazard, fire, or unknown-trouble code.</span></div></div>`;
+}
+
+async function renderHonest(my) {
+  $("stage").innerHTML = `<div class="col" style="flex:1"><ul class="honest">
+    <li><b>It shows</b> the real arrival order of ${D.totals.calls} LAPD calls for service, how many separate tickets dispatch handled, and the exact moment EchoHawk would have grouped or flagged them, using the same engine that runs the live demo.</li>
+    <li><b>It does not show</b> response times or outcomes. The public dataset has neither, so this replay makes no claim that anyone was helped faster.</li>
+    <li><b>Flags</b> compare each district's 15-minute count with its own LAPD history for that hour of the day (Poisson tail, flag when p is under the threshold).</li>
+    <li><b>Categories</b> come from mapping LAPD call-type text by radio-code family (team mapping, not LAPD's). Officer-initiated calls were removed.</li>
+  </ul><button class="cta" id="toFree">Free play the whole night →</button></div>`;
+  $("toFree").onclick = () => mode("free");
+}
+
+// ---------- free play ----------
+let clock = 0, start = 0, end = 0, playing = false, last = 0, B = null;
+function buckets() {
+  const F = S.F; const b0 = Math.floor(secs(F[0].t) / 900), b1 = Math.floor(secs(F.at(-1).t) / 900);
+  const out = []; for (let b = b0; b <= b1; b++) out.push({ b, calls: 0, machine: 0, crime: 0, person: new Set(), flags: 0 });
+  for (const f of F) { const x = out[Math.floor(secs(f.t) / 900) - b0]; x.calls++; if (f.machine) x.machine++; if (f.passthrough) x.crime++; if (!f.passthrough && !f.machine && f.incident && (f.rung === "hand" || f.rung === "ask")) x.person.add(f.incident); if (f.flagged) x.flags++; }
+  return out;
+}
+function drawChart() {
+  const svg = $("chart"), W = svg.clientWidth || 1200, H = 150, pad = 26; svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const max = Math.max(...B.map((x) => x.calls)), bw = (W - 2 * pad) / B.length, y = (v) => H - 20 - (v / max) * (H - 40);
+  let s = "";
+  B.forEach((x, i) => {
+    const X = pad + i * bw, past = (x.b * 900) <= clock;
+    s += `<rect x="${X + 1}" y="${y(x.calls)}" width="${bw - 2}" height="${H - 20 - y(x.calls)}" rx="2" fill="${past ? "#59627a" : "#2c3240"}"/>`;
+    if (x.person.size) s += `<rect x="${X + bw * 0.25}" y="${y(x.person.size)}" width="${bw * 0.5}" height="${H - 20 - y(x.person.size)}" rx="2" fill="${past ? "#3ddc97" : "#1f5a44"}"/>`;
+    if (x.flags) s += `<path d="M${X + bw / 2} ${y(x.calls) - 14} l6 6 l-6 6 l-6 -6z" fill="#5aa0ff"/>`;
+    if (x.b % 4 === 0) s += `<text x="${X}" y="${H - 5}" fill="#8b93a7" font-size="11">${hhmm(x.b * 900)}</text>`;
+  });
+  const px = pad + ((clock - B[0].b * 900) / 900) * bw; s += `<line x1="${px}" x2="${px}" y1="6" y2="${H - 18}" stroke="#e8eaf0" stroke-width="2"/>`;
+  s += `<text x="${W - pad}" y="16" text-anchor="end" fill="#8b93a7" font-size="11">peak ${max} tickets per 15 min</text>`;
+  svg.innerHTML = s;
+}
+function seek(t) {
+  clock = Math.max(start, Math.min(end, t)); $("clock").textContent = hhmm(clock);
+  const shown = S.F.filter((f) => secs(f.t) <= clock);
+  $("fCalls").textContent = shown.length;
+  $("fQueue").innerHTML = shown.slice(-40).reverse().map((f) => ticket(f)).join("") || `<div class="muted">No calls yet.</div>`;
+  const by = {}; let crime = 0, singles = 0;
+  for (const f of shown) { if (f.passthrough) { crime++; continue; } if (!f.incident) continue; const l = (by[f.incident] ||= { rd: f.rd, area: f.area, target: f.target, n: 0, machine: 0, rung: "watch", first: f.t, last: f.t, flagAt: null, reason: "" }); l.n++; if (f.machine) l.machine++; l.rung = f.rung; l.last = f.t; l.reason = f.reason; if (f.flagged && !l.flagAt) l.flagAt = f.t; }
+  const all = Object.values(by), order = { hand: 0, ask: 1, watch: 2 };
+  const matter = all.filter((l) => l.n > 1 || l.rung !== "watch" || l.flagAt).sort((a, b) => (!!b.flagAt - !!a.flagAt) || order[a.rung] - order[b.rung] || b.n - a.n);
+  singles = all.length - matter.length;
+  $("fSum").innerHTML = `<span class="count2" style="color:var(--ok)">${matter.length}</span> lines worth a look · <b>${crime}</b> crime calls passed to dispatch unchanged · <b>${singles}</b> single reports watched quietly`;
+  $("fLines").innerHTML = matter.map((l) => `<div class="ln ${l.flagAt ? "flagged" : ""}"><div class="top"><span class="pill ${l.rung}">${l.rung}</span><b>RD ${esc(l.rd)}</b><span class="muted">${esc(l.area)}</span>${l.flagAt ? `<span class="tag flag">flagged ${l.flagAt.slice(0, 5)}</span>` : ""}${l.machine ? `<span class="tag machine">${l.machine} machine</span>` : ""}</div><div>${l.n} call${l.n > 1 ? "s" : ""} → 1 line · ${esc(l.target.replace("_", " "))}</div><div class="why">${l.machine && l.machine === l.n ? "Alarm activations only. Not counted as people calling." : esc(l.reason)} · ${l.first.slice(0, 5)} to ${l.last.slice(0, 5)}</div></div>`).join("") || `<div class="muted">Nothing grouped yet.</div>`;
+  drawChart();
+}
+function tick(ts) { if (!playing) return; const dt = last ? (ts - last) / 1000 : 0; last = ts; seek(clock + dt * Number($("speed").value)); if (clock >= end) { playing = false; $("play").textContent = "▶ Play"; return; } requestAnimationFrame(tick); }
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "❚❚ Pause" : "▶ Play"; last = 0; if (playing) { if (clock >= end) seek(start); requestAnimationFrame(tick); } };
+$("chart").onclick = (e) => { const r = $("chart").getBoundingClientRect(), pad = 26 * r.width / ($("chart").viewBox.baseVal.width || r.width); const k = (e.clientX - r.left - pad) / (r.width - 2 * pad); seek(B[0].b * 900 + k * B.length * 900); };
+
+function mode(m) {
+  $("mStory").classList.toggle("on", m === "story"); $("mFree").classList.toggle("on", m === "free");
+  $("story").style.display = m === "story" ? "flex" : "none"; $("free").style.display = m === "free" ? "flex" : "none";
+  if (m === "free") { token++; seek(clock || start); } else { playing = false; $("play").textContent = "▶ Play"; go(chapter); }
+}
+$("mStory").onclick = () => mode("story"); $("mFree").onclick = () => mode("free");
+$("next").onclick = () => chapter === live().length - 1 ? mode("free") : go(chapter + 1);
+$("back").onclick = () => go(chapter - 1);
+$("dots").onclick = (e) => { if (e.target.dataset.k) go(Number(e.target.dataset.k)); };
+document.addEventListener("keydown", (e) => { if ($("story").style.display === "none") return; if (e.key === "ArrowRight") $("next").click(); if (e.key === "ArrowLeft") $("back").click(); });
+window.addEventListener("resize", () => B && $("free").style.display === "flex" && drawChart());
+
+async function load() {
+  const [from, to] = $("window").value.split("-").map(Number);
+  $("headline").textContent = "Loading the night…"; $("stage").innerHTML = "";
+  D = await fetch(`/replay/run?date=${encodeURIComponent($("day").value)}&from=${from}&to=${to}`).then((r) => r.json());
+  if (D.error || !D.frames?.length) { $("headline").textContent = D.error || "No calls in this window."; return; }
+  S = derive(D); B = buckets();
+  start = B[0].b * 900; end = (B.at(-1).b + 1) * 900; clock = start;
+  $("source").textContent = `Source: ${D.source}. ${D.totals.calls} calls, ${D.date}, ${hhmm(D.fromHour * 3600)} to ${D.toHour === 24 ? "24:00" : hhmm(D.toHour * 3600)}. Call types mapped to EchoHawk categories by radio-code family (team mapping); 906 alarm codes are machine sources. No response times or outcomes in the data, so none are claimed.`;
+  if ($("free").style.display === "flex") seek(start); else go(0);
+}
+$("day").onchange = $("window").onchange = () => { playing = false; chapter = 0; load(); };
+
+(async () => {
+  const days = await fetch("/replay/days").then((r) => r.json());
+  $("day").innerHTML = days.map((d) => `<option ${d === "2025-01-07" ? "selected" : ""}>${esc(d)}</option>`).join("");
+  await load();
+})();
+</script>
+</body>
+</html>

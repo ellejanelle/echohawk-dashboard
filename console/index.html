@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoHawk Dispatch</title>
+<style>
+  :root { --bg:#0f1115; --panel:#151821; --panel2:#1a1e28; --line:#262b36; --line2:#323848; --text:#e8eaf0; --muted:#8b93a7; --dim:#5d6578;
+          --hand:#ff5d5d; --ask:#ffb020; --watch:#5aa0ff; --ok:#3ddc97; --ai:#9b87ff; }
+  * { box-sizing:border-box } html, body { height:100% }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden }
+  button { font:inherit; color:var(--text); background:#202534; border:1px solid var(--line2); border-radius:7px; padding:6px 11px; cursor:pointer; transition:background .15s, border-color .15s, transform .05s }
+  button:hover { border-color:#4a5268; background:#252b3c } button:active { transform:translateY(1px) } button:disabled { opacity:.4; cursor:default }
+  input, select { font:inherit; background:#10131a; color:var(--text); border:1px solid var(--line2); border-radius:7px; padding:8px 10px }
+  kbd { font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); border:1px solid var(--line2); border-bottom-width:2px; border-radius:4px; padding:0 4px; background:#141821 }
+
+  /* header */
+  header { height:60px; display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#141822,#0f1115) }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px; font-size:16px }
+  .brand .dot { width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(61,220,151,.6); animation:beat 2s infinite }
+  @keyframes beat { 0% { box-shadow:0 0 0 0 rgba(61,220,151,.55) } 70% { box-shadow:0 0 0 10px rgba(61,220,151,0) } 100% { box-shadow:0 0 0 0 rgba(61,220,151,0) } }
+  .brand small { color:var(--muted); font-weight:500 }
+  .stats { display:flex; gap:8px; margin-left:12px }
+  .stat { display:flex; align-items:baseline; gap:6px; padding:5px 11px; border:1px solid var(--line); border-radius:999px; background:#131720; font-size:12px; color:var(--muted) }
+  .stat b { font-size:16px; color:var(--text); font-variant-numeric:tabular-nums } .stat.hand b { color:var(--hand) } .stat.ai b { color:var(--ai) } .stat.ok b { color:var(--ok) }
+  .spacer { flex:1 } .clock { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px }
+  button.sim { border-color:#3a6b57; color:var(--ok); background:#122019 } button.sim:hover { background:#16291f }
+  .help-btn { width:30px; padding:5px 0; text-align:center }
+
+  /* layout */
+  main { display:grid; grid-template-columns: 1fr 430px; height:calc(100vh - 60px) }
+  .wall { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; padding:14px; overflow:hidden }
+  .lane { display:flex; flex-direction:column; min-height:0; background:var(--panel); border:1px solid var(--line); border-radius:12px }
+  .lane > h2 { display:flex; align-items:center; gap:8px; margin:0; padding:12px 14px 10px; font-size:12px; letter-spacing:.9px; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line) }
+  .lane > h2 .count { margin-left:auto; font-size:12px; color:var(--text); background:#222736; border-radius:999px; padding:1px 9px; letter-spacing:0 }
+  .lane > h2 .bar { width:8px; height:8px; border-radius:2px }
+  .lane.need > h2 .bar { background:var(--hand) } .lane.need > h2 { color:#ffb3b3 }
+  .lane.ai > h2 .bar { background:var(--ai) } .lane.done > h2 .bar { background:var(--ok) }
+  .cards { flex:1; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px; scrollbar-width:thin }
+  .empty { color:var(--dim); font-size:13px; text-align:center; padding:28px 10px; border:1px dashed var(--line); border-radius:10px }
+
+  /* card */
+  .card { position:relative; background:var(--panel2); border:1px solid var(--line); border-radius:11px; padding:11px 12px 10px 15px; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .2s; animation:in .35s ease-out }
+  @keyframes in { from { opacity:0; transform:translateY(-6px) } to { opacity:1; transform:none } }
+  .card::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:4px; border-radius:0 3px 3px 0; background:var(--rc, var(--line2)) }
+  .card.hand { --rc:var(--hand) } .card.ask { --rc:var(--ask) } .card.watch { --rc:var(--watch) } .card.live { --rc:var(--ai) } .card.deployed { --rc:var(--ok) }
+  .card:hover { border-color:var(--line2) } .card.sel { border-color:#5a6584; background:#1e2330; box-shadow:0 0 0 1px #5a6584, 0 8px 24px rgba(0,0,0,.35) }
+  .card.hand.urgent { animation:in .35s ease-out, glow 1.6s ease-in-out infinite }
+  @keyframes glow { 0%,100% { box-shadow:0 0 0 0 rgba(255,93,93,0) } 50% { box-shadow:0 0 0 3px rgba(255,93,93,.25) } }
+  .top { display:flex; align-items:center; gap:7px; flex-wrap:wrap }
+  .zone { font-weight:700; font-size:15px; letter-spacing:.3px } .what { color:#cfd4e2; text-transform:capitalize }
+  .rung { display:inline-block; padding:1px 8px; border-radius:999px; font-weight:700; font-size:10.5px; letter-spacing:.4px; text-transform:uppercase; color:#0f1115 }
+  .rung.hand { background:var(--hand) } .rung.ask { background:var(--ask) } .rung.watch { background:var(--watch) }
+  .lang { font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:5px; border:1px solid var(--line2); color:#cfd4e2 } .lang.es { border-color:#7c6a2d; color:#ffd77a }
+  .timer { margin-left:auto; font-variant-numeric:tabular-nums; font-size:12px; color:var(--muted) } .timer.live { color:var(--ai) }
+  .snippet { margin:8px 0 6px; font-size:13px; color:#d6dae5; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+  .snippet .who { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin-right:5px }
+  .snippet .tr { display:block; color:var(--muted); font-size:12px; -webkit-line-clamp:1 }
+  .meta { display:flex; flex-wrap:wrap; gap:5px; margin:6px 0 2px }
+  .chip { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--line2); color:var(--muted); white-space:nowrap }
+  .chip.line { border-color:#2f4a73; color:#9fc4ff } .chip.ai { border-color:#4b4380; color:#c6bbff } .chip.flag { border-color:#7a3a3a; color:#ff9d9d } .chip.trig { border-color:#7a3a3a; color:#ffb3b3; background:#2a1517 }
+  .chip.me { border-color:#2d6b52; color:var(--ok) } .chip.unit { border-color:#2d6b52; color:var(--ok); background:#122019 } .chip.mach { border-color:#4b4380; color:#b9a7ff }
+  .sev { display:inline-flex; gap:2px; vertical-align:middle } .sev i { width:5px; height:10px; border-radius:1px; background:#2b3140 } .sev i.on { background:var(--sc,#8b93a7) }
+  .deploy { display:flex; gap:5px; margin-top:9px; flex-wrap:wrap }
+  .deploy { gap:4px } .deploy button { padding:4px 7px; font-size:11.5px; border-radius:6px; display:inline-flex; align-items:center; gap:4px }
+  .deploy button.sugg { border-color:var(--ok); color:var(--ok); background:#132219; box-shadow:0 0 0 2px rgba(61,220,151,.12) }
+  .deploy button.sent { border-color:#2d6b52; background:#16291f; color:var(--ok) }
+  .deploy .ico { font-size:12px; line-height:1 } .card .deploy .ico { display:none }
+  .actions { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap }
+  .actions button { padding:3px 8px; font-size:11.5px; background:transparent }
+  .actions button.take { border-color:#7a3a3a; color:#ffb3b3 } .actions button.take:hover { background:#2a1517 }
+  .flagmenu { position:absolute; z-index:5; right:10px; bottom:38px; background:#1b2030; border:1px solid var(--line2); border-radius:9px; padding:5px; box-shadow:0 12px 30px rgba(0,0,0,.5); display:flex; flex-direction:column; min-width:180px }
+  .flagmenu button { background:transparent; border:0; text-align:left; padding:7px 10px; border-radius:6px } .flagmenu button:hover { background:#262c3d }
+  .flagmenu .lbl { font-size:11px; color:var(--dim); padding:4px 10px 2px; text-transform:uppercase; letter-spacing:.6px }
+
+  /* detail */
+  aside { border-left:1px solid var(--line); background:#12151c; display:flex; flex-direction:column; min-height:0 }
+  .d-head { padding:16px 18px 12px; border-bottom:1px solid var(--line) }
+  .d-head h3 { margin:0; font-size:18px; display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .d-head .sub { color:var(--muted); font-size:12px; margin-top:3px }
+  .facts { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px }
+  .fact { background:#171b25; border:1px solid var(--line); border-radius:8px; padding:7px 9px } .fact span { display:block; font-size:10.5px; color:var(--dim); text-transform:uppercase; letter-spacing:.6px } .fact b { font-size:13px; text-transform:capitalize }
+  .d-body { flex:1; overflow:auto; padding:12px 18px; scrollbar-width:thin }
+  .turn { padding:8px 11px; border-radius:10px; margin:7px 0; max-width:88%; font-size:13.5px }
+  .turn .who { font-size:10.5px; color:var(--dim); margin-bottom:2px; text-transform:uppercase; letter-spacing:.6px }
+  .turn.user { background:#1d2230; border:1px solid var(--line) } .turn.agent { background:#1c1a2e; border:1px solid #2f2a52; margin-left:auto } .turn.dispatcher { background:#13261e; border:1px solid #2d6b52; margin-left:auto }
+  .turn .tr { color:var(--muted); font-size:12px; margin-top:4px; border-top:1px dashed var(--line2); padding-top:4px }
+  .d-section { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.8px; margin:16px 0 6px }
+  .report-reason { background:#171b25; border:1px solid var(--line); border-radius:8px; padding:10px; color:#cfd4e2; font-size:13px }
+  .d-foot { border-top:1px solid var(--line); padding:12px 18px 14px; display:flex; flex-direction:column; gap:8px; background:#141821 }
+  .row { display:flex; gap:7px; align-items:center } .row input { flex:1; min-width:0 } .row select { width:150px; flex:none }
+  button.join { border-color:#4b4380; color:#c6bbff } button.join.on { background:#211d3a } button.take2 { border-color:#7a3a3a; color:#ffb3b3 } button.mic.on { border-color:var(--ok); color:var(--ok) }
+  details.kits summary { cursor:pointer; color:var(--muted); font-size:12px; list-style:none } details.kits summary::before { content:"▸ "; } details.kits[open] summary::before { content:"▾ " }
+  .kit { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:12.5px } .kit div { flex:1 } .kit small { color:var(--dim); display:block }
+  .placeholder { color:var(--dim); text-align:center; margin-top:30%; padding:0 30px }
+  .placeholder b { display:block; color:var(--muted); font-size:15px; margin-bottom:6px }
+
+  /* toasts + help */
+  #toasts { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); display:flex; flex-direction:column; gap:8px; z-index:20; align-items:center }
+  .toast { background:#1b2030; border:1px solid var(--line2); border-left:3px solid var(--ok); padding:9px 14px; border-radius:9px; box-shadow:0 10px 30px rgba(0,0,0,.45); animation:in .25s ease-out; font-size:13px }
+  .toast.err { border-left-color:var(--hand) }
+  #help { position:fixed; inset:0; background:rgba(5,7,10,.6); display:none; align-items:center; justify-content:center; z-index:30 }
+  #help.on { display:flex } #help .box { background:#171b25; border:1px solid var(--line2); border-radius:14px; padding:20px 24px; min-width:380px }
+  #help h4 { margin:0 0 10px } #help .k { display:grid; grid-template-columns:90px 1fr; gap:6px 12px; font-size:13px; color:#cfd4e2 }
+  .keys { color:var(--dim); font-size:11.5px; display:flex; gap:10px; align-items:center }
+  @media (max-width: 1200px) { main { grid-template-columns:1fr 380px } .stats .stat:nth-child(n+3) { display:none } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>EchoHawk <small>Dispatch</small></div>
+  <div class="stats">
+    <div class="stat hand"><b id="nNeed">0</b>need a person</div>
+    <div class="stat ai"><b id="nAi">0</b>AI on the line</div>
+    <div class="stat ok"><b id="nDone">0</b>handled or sent</div>
+    <div class="stat"><b id="nUnits">0</b>units sent</div>
+  </div>
+  <span class="spacer"></span>
+  <span class="keys"><kbd>J</kbd><kbd>K</kbd> move <kbd>T</kbd> take <kbd>E</kbd><kbd>F</kbd><kbd>P</kbd> send</span>
+  <button class="sim" id="sim">▶ Simulate calls</button>
+  <button class="help-btn" id="helpBtn" title="Keyboard shortcuts">?</button>
+  <span class="clock" id="clock"></span>
+</header>
+<main>
+  <div class="wall">
+    <section class="lane need"><h2><span class="bar"></span>Needs a person<span class="count" id="cNeed">0</span></h2><div class="cards" id="laneNeed"></div></section>
+    <section class="lane ai"><h2><span class="bar"></span>AI handling now<span class="count" id="cAi">0</span></h2><div class="cards" id="laneAi"></div></section>
+    <section class="lane done"><h2><span class="bar"></span>Handled by AI or sent<span class="count" id="cDone">0</span></h2><div class="cards" id="laneDone"></div></section>
+  </div>
+  <aside id="detail"><div class="placeholder"><b>Pick a call or report</b>Live transcript, translation, Interpreter Mode and the kit cards open here. Use <kbd>J</kbd> and <kbd>K</kbd> to move.</div></aside>
+</main>
+<div id="toasts"></div>
+<div id="help"><div class="box"><h4>Keyboard</h4><div class="k">
+  <span><kbd>J</kbd> <kbd>K</kbd></span><span>next / previous card</span>
+  <span><kbd>T</kbd></span><span>take the call (AI hands it to you)</span>
+  <span><kbd>I</kbd></span><span>join in Interpreter Mode</span>
+  <span><kbd>E</kbd></span><span>send EMS</span><span><kbd>F</kbd></span><span>send Fire</span><span><kbd>P</kbd></span><span>send Police</span>
+  <span><kbd>U</kbd></span><span>send Utility crew</span><span><kbd>C</kbd></span><span>schedule a callback</span>
+  <span><kbd>S</kbd></span><span>push to supervisor</span>
+  <span><kbd>/</kbd></span><span>type to the caller</span>
+  <span><kbd>?</kbd></span><span>this help</span>
+</div></div></div>
+
+<script>
+const token = new URLSearchParams(location.search).get("token") || "dev-dispatcher";
+const H = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+const UNITS = [["ems", "EMS", "✚", "E"], ["fire", "Fire", "🔥", "F"], ["police", "Police", "⛨", "P"], ["utility", "Utility", "⚡", "U"], ["callback", "Callback", "↩", "C"]];
+const FLAGS = [["wrong_zone", "Wrong zone"], ["wrong_category", "Wrong category"], ["caller_distressed", "Caller distressed"], ["language_issue", "Language issue"]];
+const TRIG = { breathing_qualified: "breathing trouble", unconscious: "unconscious", trapped: "trapped", dependent_alone: "dependent alone", violence: "violence", asks_for_human: "asked for a person", self_harm: "self harm risk", insists_higher_severity: "says it's worse", severe_bleeding: "severe bleeding" };
+const PRETTY = { power_line: "power line down", structure_fire: "structure fire", person: "medical", unknown: "not clear yet" };
+const pretty = (t) => PRETTY[t] || String(t || "not clear yet").replace(/_/g, " ");
+// Engine reasons are written for the audit log; say the same thing in plain words on the wall.
+function human(it) {
+  const n = it.independent || 0, m = it.machine || 0, r = String(it.reason || "");
+  if (it.triggers.length) return `Caller said something that always gets a person: ${it.triggers.map((t) => TRIG[t] || t.replace(/_/g, " ")).join(", ")}.`;
+  if (/^spread/.test(r)) return `Same problem now reported in the zone next door. It may be spreading.`;
+  if (!n && m) return `${m} alarm activation${m > 1 ? "s" : ""}, no people calling. Likely a power blip or wind, not ${m} separate emergencies.`;
+  if (/high-consequence/.test(r)) return `${pretty(it.target)} can get worse fast, so one report is enough to ask a person to check.`;
+  if (it.rung === "hand") return `${n} different callers report the same thing here. That is enough to send help without waiting.`;
+  if (it.rung === "ask") return `${n} caller${n > 1 ? "s" : ""} so far. Worth a quick look.`;
+  return `${n || 1} report so far. The AI is watching for more before it asks you.`;
+}
+let CALLS = [], INCS = [], ITEMS = [], selected = null, kits = [], openFlag = null; const JOINED = new Set();
+
+// What service fits: the AI's extracted action first, the line's category second.
+function suggest(action, target) {
+  const a = { dispatch_ems: ["ems"], dispatch_fire: ["fire"], dispatch_police: ["police"], welfare_check: ["police"], info_only: ["callback"], deflect_311: ["callback"] }[action];
+  if (a) return a;
+  return { person: ["ems"], structure_fire: ["fire"], wildfire: ["fire"], gas: ["fire", "utility"], power_line: ["utility", "fire"], power: ["utility"], water: ["utility"], flood: ["utility"], road: ["police"], vehicle: ["police"], alarm: ["police"], crime: ["police"] }[target] || ["callback"];
+}
+const ago = (iso) => { if (!iso) return ""; const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m`; };
+const sevBars = (n) => { const v = Number(n) || 0; const c = v >= 4 ? "var(--hand)" : v === 3 ? "var(--ask)" : "var(--watch)"; return `<span class="sev" title="severity ${v} of 5" style="--sc:${c}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= v ? "on" : ""}"></i>`).join("")}</span>`; };
+
+// ---------- data ----------
+async function refresh() {
+  const [c, i] = await Promise.allSettled([fetch("/calls").then((r) => r.json()), fetch("/incidents").then((r) => r.json())]);
+  if (c.status === "fulfilled" && Array.isArray(c.value)) CALLS = c.value;
+  if (i.status === "fulfilled" && Array.isArray(i.value)) INCS = i.value;
+  build(); render();
+}
+
+function build() {
+  const items = [];
+  for (const c of CALLS) {
+    const live = !c.ended_at;
+    const flags = [...new Set((c.flags || []).map((f) => f.flag))];
+    const hard = (c.triggers || []).length > 0;
+    const sent = (c.dispatched || []).length > 0;
+    let lane;
+    if (c.status === "transferred" && live) lane = "need";
+    else if (flags.length && !sent) lane = "need";
+    else if (live) lane = c.rung === "hand" || hard ? "need" : "ai";
+    else lane = (hard || c.status === "transferred") && !sent ? "need" : "done";
+    items.push({ kind: "call", id: c.id, lane, live, rung: lane === "done" ? null : c.rung || null, zone: c.zone_id && c.zone_id !== "unknown" ? c.zone_id : null, target: c.target, severity: c.severity, language: c.language, start: c.started_at, end: c.ended_at, action: c.action, incident_id: c.incident_id, independent: c.independent_count, size: c.incident_size, triggers: c.triggers || [], dispatched: c.dispatched || [], flags, status: c.status, transfer_path: c.transfer_path, last: c.last_turns || [], raw: c });
+  }
+  // a line already shown by a live call, or by a call that needs a person, does not get a second card
+  const linked = new Set(items.filter((x) => x.incident_id && (x.live || x.lane === "need")).map((x) => x.incident_id));
+  for (const x of INCS) {
+    if (linked.has(x.id)) continue;
+    const sent = (x.dispatched || []).length > 0;
+    const lane = sent ? "done" : x.rung === "watch" && !(x.triggers || []).length ? "done" : "need";
+    items.push({ kind: "report", id: x.id, lane, live: false, rung: x.rung, zone: x.zone_id, target: x.target, severity: null, start: x.first_report_at || x.opened_at, last_at: x.last_packet_at, incident_id: x.id, independent: x.independent_count, machine: x.machine_count || 0, size: (x.packet_ids || []).length, triggers: x.triggers || [], dispatched: x.dispatched || [], flags: [], reason: x.last_reason, score: x.score, trend: x.trend, spread: x.spread_linked_incident_id, raw: x });
+  }
+  const order = { hand: 0, ask: 1, watch: 2 };
+  const rank = (a) => (a.triggers.length ? -1 : 0) + (order[a.rung] ?? 3);
+  items.sort((a, b) => (a.lane === "need" && b.lane === "need" ? rank(a) - rank(b) : 0) || (b.live - a.live) || new Date(b.last_at || b.start) - new Date(a.last_at || a.start));
+  ITEMS = items;
+}
+
+// ---------- render ----------
+function lineChip(it) {
+  if (!it.incident_id || !it.zone) return "";
+  const n = it.independent || 0;
+  return `<span class="chip line" title="EchoHawk groups every report about the same thing in the same zone into one line">joined ${esc(it.zone)} ${esc(pretty(it.target))} · ${n} caller${n === 1 ? "" : "s"}${it.machine ? ` +${it.machine} alarm` : ""}</span>`;
+}
+function statusChips(it) {
+  const out = [];
+  if (it.kind === "call") {
+    if (it.live && it.status === "transferred") out.push(`<span class="chip me">● you have the call</span>`);
+    else if (it.live && JOINED.has(it.id)) out.push(`<span class="chip me">● interpreter on</span>`);
+    else if (it.live) out.push(`<span class="chip ai">● AI on the line</span>`);
+    else if (it.status === "transferred") out.push(`<span class="chip">ended after handoff</span>`);
+    else out.push(`<span class="chip">ended · AI closed it</span>`);
+  } else {
+    out.push(`<span class="chip ai" title="Taken by the AI on another line; no live call to join">taken by AI</span>`);
+    if (it.machine && !it.independent) out.push(`<span class="chip mach">alarms only</span>`);
+    if (it.trend === "rising") out.push(`<span class="chip flag">↑ rising</span>`);
+    if (it.spread) out.push(`<span class="chip flag">↔ spreading</span>`);
+  }
+  for (const t of it.triggers) out.push(`<span class="chip trig">⚠ ${esc(TRIG[t] || t.replace(/_/g, " "))}</span>`);
+  for (const f of it.flags) out.push(`<span class="chip flag">⚑ ${esc(f.replace(/_/g, " "))}</span>`);
+  return out.join("");
+}
+function card(it, idx) {
+  const rung = it.rung || (it.live ? "live" : "");
+  const sugg = suggest(it.action, it.target);
+  const sentUnits = new Set(it.dispatched.map((d) => d.unit));
+  const urgent = it.lane === "need" && (it.rung === "hand" || it.triggers.length) && !sentUnits.size;
+  const cls = ["card", sentUnits.size ? "deployed" : it.live && !it.rung ? "live" : it.rung || "", urgent ? "urgent" : "", it.id === selected ? "sel" : ""].join(" ");
+  const lang = it.language && it.language !== "und" ? `<span class="lang ${esc(it.language)}">${esc(it.language.toUpperCase())}</span>` : "";
+  const timer = `<span class="timer ${it.live ? "live" : ""}" data-start="${esc(it.start)}" data-end="${esc(it.end || "")}">${it.live ? "● " : ""}${span(it.start, it.end)}</span>`;
+  let snippet = "";
+  if (it.kind === "call") {
+    const t = [...it.last].reverse().find((x) => x.role === "user") || it.last.at(-1);
+    snippet = t ? `<div class="snippet"><span class="who">${t.role === "user" ? "caller" : t.role === "agent" ? "AI" : "you"}</span>${esc(t.text)}${t.tr ? `<span class="tr">→ ${esc(t.tr)}</span>` : ""}</div>` : `<div class="snippet"><span class="who">AI</span>Answering…</div>`;
+  } else snippet = `<div class="snippet">${esc(human(it))}</div>`;
+  const deploy = it.incident_id ? `<div class="deploy">${UNITS.map(([u, label, ico]) => `<button data-act="deploy" data-unit="${u}" class="${sentUnits.has(u) ? "sent" : sugg.includes(u) ? "sugg" : ""}" title="${sentUnits.has(u) ? "sent" : sugg.includes(u) ? "suggested by the AI" : "send"}"><span class="ico">${ico}</span>${label}</button>`).join("")}</div>` : `<div class="deploy"><span class="chip">waiting for zone and what happened</span></div>`;
+  const actions = it.kind === "call"
+    ? `<div class="actions">${it.live && it.status !== "transferred" ? `<button data-act="take" class="take">Take the call</button>` : ""}<button data-act="super">Push to supervisor</button><button data-act="flagmenu">⚑ Flag AI</button></div>`
+    : `<div class="actions"><button data-act="super">Push to supervisor</button></div>`;
+  return `<div class="${cls}" data-id="${esc(it.id)}" data-i="${idx}">
+    <div class="top">${it.rung ? `<span class="rung ${esc(it.rung)}">${esc(it.rung === "hand" ? "needs a person" : it.rung)}</span>` : ""}<span class="zone">${esc(it.zone || "Zone ?")}</span><span class="what">${esc(pretty(it.target))}</span>${it.severity ? sevBars(it.severity) : ""}${lang}${timer}</div>
+    ${snippet}
+    <div class="meta">${lineChip(it)}${statusChips(it)}${it.dispatched.map((d) => `<span class="chip unit">✓ ${esc(d.unit)} sent ${ago(d.at)} ago</span>`).slice(0, 3).join("")}</div>
+    ${it.lane === "done" && it.id !== selected ? "" : deploy + actions}
+    ${openFlag === it.id ? `<div class="flagmenu"><div class="lbl">Flag what the AI did</div>${FLAGS.map(([f, l]) => `<button data-act="flag" data-flag="${f}">${l}</button>`).join("")}</div>` : ""}
+  </div>`;
+}
+function render() {
+  const lanes = { need: [], ai: [], done: [] };
+  ITEMS.forEach((it, i) => lanes[it.lane].push(card(it, i)));
+  const emp = { need: "Nothing needs a person right now.", ai: "No calls on the line. Press ▶ Simulate calls, or call the Retell number.", done: "Calls the AI finished and reports you sent help to land here." };
+  for (const [k, el] of [["need", "laneNeed"], ["ai", "laneAi"], ["done", "laneDone"]]) $(el).innerHTML = lanes[k].join("") || `<div class="empty">${emp[k]}</div>`;
+  $("cNeed").textContent = $("nNeed").textContent = lanes.need.length;
+  $("cAi").textContent = lanes.ai.length; $("nAi").textContent = ITEMS.filter((x) => x.live && x.lane !== "done").length;
+  $("cDone").textContent = $("nDone").textContent = lanes.done.length;
+  $("nUnits").textContent = ITEMS.reduce((a, x) => a + x.dispatched.length, 0);
+  if (selected && !ITEMS.find((x) => x.id === selected)) { selected = null; }
+  renderDetail();
+}
+
+// ---------- detail ----------
+let lastDetailKey = "";
+async function renderDetail(force) {
+  const it = ITEMS.find((x) => x.id === selected);
+  if (!it) { if (lastDetailKey !== "none") { $("detail").innerHTML = `<div class="placeholder"><b>Pick a call or report</b>Live transcript, translation, Interpreter Mode and the kit cards open here. Use <kbd>J</kbd> and <kbd>K</kbd> to move.</div>`; lastDetailKey = "none"; } return; }
+  let turns = [], packets = [];
+  if (it.kind === "call") { try { turns = await fetch(`/calls/${encodeURIComponent(it.id)}/transcript`).then((r) => r.json()); } catch {} }
+  else { try { const d = await fetch(`/incidents/${encodeURIComponent(it.id)}`).then((r) => r.json()); packets = d.packets || []; } catch {} }
+  const key = JSON.stringify([it.id, it.lane, it.status, it.rung, it.dispatched.length, it.flags.length, JOINED.has(it.id), turns.map((t) => [t.text_original, t.text_translated]), packets.length, it.independent]);
+  if (key === lastDetailKey && !force) { updateTimers(); return; }
+  const keepInput = $("sayIn")?.value || ""; const hadFocus = document.activeElement?.id === "sayIn";
+  lastDetailKey = key;
+  const sentUnits = new Set(it.dispatched.map((d) => d.unit));
+  const facts = `<div class="facts">
+    <div class="fact"><span>Zone</span><b>${esc(it.zone || "?")}</b></div>
+    <div class="fact"><span>What</span><b>${esc(pretty(it.target))}</b></div>
+    <div class="fact"><span>${it.kind === "call" ? "Severity" : "Callers"}</span><b>${it.kind === "call" ? (it.severity ? `${esc(it.severity)}/5` : "?") : `${esc(it.independent)}${it.machine ? ` +${esc(it.machine)} alarm` : ""}`}</b></div>
+    <div class="fact"><span>Anyone hurt</span><b>${it.triggers.some((t) => ["breathing_qualified", "unconscious", "severe_bleeding", "insists_higher_severity"].includes(t)) || it.target === "person" ? "Yes" : it.kind === "call" && it.last.some((t) => /\b(no one|nobody|nadie)\b/i.test(t.text)) ? "No" : "Not said"}</b></div>
+  </div>`;
+  let body;
+  if (it.kind === "call") {
+    body = turns.map((t) => `<div class="turn ${esc(t.role)}"><div class="who">${t.role === "user" ? "Caller" : t.role === "agent" ? "EchoHawk AI" : "You"}${t.lang_original && t.lang_original !== "und" ? ` · ${esc(t.lang_original)}` : ""}</div>${esc(t.text_original)}${t.text_translated ? `<div class="tr">→ ${esc(t.text_translated)}</div>` : ""}</div>`).join("") || `<div class="placeholder" style="margin-top:20%">No words yet.</div>`;
+  } else {
+    body = `<div class="d-section">Why it is on your screen</div><div class="report-reason">${esc(human(it))}<div style="color:var(--dim);font-size:11.5px;margin-top:6px">Engine log: ${esc(it.reason || "")}</div></div>
+      <div class="d-section">Reports on this line (${packets.length})</div>` + packets.map((p) => `<div class="kit"><div>${esc(p.source === "telemetry" ? "Alarm or sensor" : p.source === "voice" ? "Caller" : p.source)} · ${esc(pretty(p.target))} · severity ${esc(p.severity)}<small>${new Date(p.received_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${esc(p.language && p.language !== "und" ? p.language : "")} ${esc(p.provenance)}</small></div></div>`).join("");
+  }
+  const live = it.kind === "call" && it.live;
+  const isJoined = JOINED.has(it.id) || it.status === "transferred";
+  const foot = live ? `<div class="d-foot">
+      <div class="row"><button id="joinBtn" class="join ${isJoined ? "on" : ""}">${isJoined ? "● Interpreter on, AI is quiet" : "Join in Interpreter Mode"}</button>${it.status !== "transferred" ? `<button id="takeBtn" class="take2">Take the call</button>` : ""}</div>
+      <div class="row"><select id="langSel"><option value="en">I speak English</option><option value="es">Hablo español</option></select><input id="sayIn" placeholder="${isJoined ? "Type what the caller hears, translated for them" : "Join first to talk to the caller"}" ${isJoined ? "" : "disabled"}><button id="micBtn" class="mic" ${isJoined ? "" : "disabled"} title="Hold to talk">🎙</button><button id="sayBtn" ${isJoined ? "" : "disabled"}>Say</button></div>
+      <details class="kits"><summary>Kit cards the AI can read to the caller (${kits.length})</summary>${kits.map((k) => `<div class="kit"><div>${esc(k.title)}<small>${esc(k.kit_id)} · ${esc(k.mode)} · review: ${esc(k.medical_review)}</small></div><button data-kit="${esc(k.kit_id)}">Show</button></div>`).join("")}<div class="kit"><div><small>Swapping or closing a card is logged as a human change.</small></div><button data-kit="">Close card</button></div></details>
+    </div>` : "";
+  $("detail").innerHTML = `<div class="d-head"><h3>${it.rung ? `<span class="rung ${esc(it.rung)}">${esc(it.rung === "hand" ? "needs a person" : it.rung)}</span>` : ""}${esc(it.zone || "Zone ?")} · <span style="text-transform:capitalize">${esc(pretty(it.target))}</span></h3>
+    <div class="sub">${it.kind === "call" ? `Call ${esc(it.id)} · ${it.live ? "on the line" : "ended"} · ${esc(it.language && it.language !== "und" ? it.language.toUpperCase() : "language not set")} · <span class="timer" data-start="${esc(it.start)}" data-end="${esc(it.end || "")}">${span(it.start, it.end)}</span>` : `Line ${esc(it.id)} · first report ${ago(it.start)} ago · confidence ${Number(it.score || 0).toFixed(2)} (heuristic)`}</div>
+    ${facts}
+    <div class="meta" style="margin-top:10px">${lineChip(it)}${statusChips(it)}</div>
+    ${it.incident_id ? `<div class="deploy" style="margin-top:10px">${UNITS.map(([u, label, ico, k]) => `<button data-dunit="${u}" class="${sentUnits.has(u) ? "sent" : suggest(it.action, it.target).includes(u) ? "sugg" : ""}"><span class="ico">${ico}</span>${sentUnits.has(u) ? "✓ " : ""}${label} <kbd>${k}</kbd></button>`).join("")}</div>` : ""}
+  </div>
+  <div class="d-body" id="dbody">${body}</div>${foot}`;
+  const db = $("dbody"); db.scrollTop = db.scrollHeight;
+  if ($("sayIn")) { $("sayIn").value = keepInput; if (hadFocus) $("sayIn").focus(); }
+  wireDetail(it);
+}
+function wireDetail(it) {
+  $("detail").querySelectorAll("[data-dunit]").forEach((b) => b.onclick = () => deploy(it, b.dataset.dunit));
+  $("detail").querySelectorAll("[data-kit]").forEach((b) => b.onclick = () => pushKit(it.id, b.dataset.kit || null));
+  if ($("joinBtn")) $("joinBtn").onclick = () => join(it);
+  if ($("takeBtn")) $("takeBtn").onclick = () => take(it);
+  if ($("sayBtn")) { $("sayBtn").onclick = () => say(it); $("sayIn").onkeydown = (e) => { if (e.key === "Enter") say(it); e.stopPropagation(); }; }
+  if ($("micBtn")) wireMic(it);
+}
+
+// ---------- actions ----------
+function toast(msg, err) { const d = document.createElement("div"); d.className = "toast" + (err ? " err" : ""); d.textContent = msg; $("toasts").appendChild(d); setTimeout(() => d.remove(), 3200); }
+async function post(url, body) { const r = await fetch(url, { method: "POST", headers: H, body: JSON.stringify(body || {}) }); let j = {}; try { j = await r.json(); } catch {} return { ok: r.ok, j }; }
+async function deploy(it, unit) {
+  if (!it.incident_id) return toast("This call has no line yet. Wait for zone and what happened.", true);
+  if (it.dispatched.some((d) => d.unit === unit)) return toast(`${unit} already sent`);
+  const { ok, j } = await post(`/incidents/${encodeURIComponent(it.incident_id)}/dispatch`, { units: [unit] });
+  ok ? toast(`${UNITS.find((u) => u[0] === unit)[1]} sent to ${it.zone}`) : toast(j.error || "send failed", true); refresh();
+}
+async function take(it) {
+  const { ok, j } = await post(`/calls/${encodeURIComponent(it.id)}/takeover`);
+  if (ok) { JOINED.add(it.id); selected = it.id; lastDetailKey = ""; toast("You have the call. The caller was told a dispatcher is on the line."); } else toast(j.error || "call is not live", true); refresh();
+}
+async function join(it) {
+  if (JOINED.has(it.id)) return;
+  const { ok, j } = await post(`/calls/${encodeURIComponent(it.id)}/join`, { dispatcher_id: "console" });
+  if (ok) { JOINED.add(it.id); toast("Interpreter Mode on. The AI goes quiet while you're joined."); } else toast(j.error || "call is not live", true); renderDetail(true);
+}
+async function say(it) {
+  const t = $("sayIn").value.trim(); if (!t) return; $("sayIn").value = "";
+  const { ok, j } = await post(`/calls/${encodeURIComponent(it.id)}/say`, { text: t, lang_from: $("langSel").value });
+  ok ? toast(`Caller heard (${j.lang_to}): ${j.sent_text}`) : toast(j.error || "failed", true); renderDetail(true);
+}
+async function flag(it, f) { const { ok, j } = await post(`/calls/${encodeURIComponent(it.id)}/flag`, { flag: f }); ok ? toast(f === "supervisor" ? "Pushed to the supervisor board" : `Flagged: ${f.replace(/_/g, " ")}`) : toast(j.error || "failed", true); openFlag = null; refresh(); }
+async function pushSuper(it) {
+  if (it.kind === "call") return flag(it, "supervisor");
+  const { ok } = await post(`/incidents/${encodeURIComponent(it.id)}/ack`); ok ? toast("Pushed to the supervisor board") : toast("failed", true);
+}
+async function pushKit(callId, kitId) { const { ok } = await post(`/calls/${encodeURIComponent(callId)}/kit`, { kit_id: kitId }); toast(ok ? (kitId ? `Card ${kitId} sent to the caller` : "Card closed") : "failed", !ok); }
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function wireMic(it) {
+  const b = $("micBtn"); if (!SR) { b.title = "Speech recognition not available here; type instead"; return; }
+  const rec = new SR(); rec.interimResults = false; rec.onresult = (e) => { $("sayIn").value = e.results[0][0].transcript; say(it); };
+  b.onmousedown = () => { rec.lang = $("langSel").value === "es" ? "es-MX" : "en-US"; rec.start(); b.classList.add("on"); };
+  b.onmouseup = () => { rec.stop(); b.classList.remove("on"); };
+}
+
+// clicks on the wall
+document.querySelector(".wall").addEventListener("click", (e) => {
+  const cardEl = e.target.closest(".card"); if (!cardEl) return;
+  const it = ITEMS.find((x) => x.id === cardEl.dataset.id); if (!it) return;
+  const btn = e.target.closest("button");
+  if (btn) {
+    e.stopPropagation();
+    const a = btn.dataset.act;
+    if (a === "deploy") deploy(it, btn.dataset.unit);
+    else if (a === "take") take(it);
+    else if (a === "super") pushSuper(it);
+    else if (a === "flagmenu") { openFlag = openFlag === it.id ? null : it.id; render(); }
+    else if (a === "flag") flag(it, btn.dataset.flag);
+    return;
+  }
+  openFlag = null; select(it.id);
+});
+document.addEventListener("click", (e) => { if (openFlag && !e.target.closest(".flagmenu") && !e.target.closest("[data-act=flagmenu]")) { openFlag = null; render(); } });
+function select(id) { selected = id; lastDetailKey = ""; render(); document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+
+// keyboard
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, select, textarea")) { if (e.key === "Escape") e.target.blur(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "?") return $("help").classList.toggle("on");
+  if (k === "escape") { $("help").classList.remove("on"); openFlag = null; render(); return; }
+  const order = ["need", "ai", "done"].flatMap((l) => ITEMS.filter((x) => x.lane === l));
+  const cur = order.findIndex((x) => x.id === selected);
+  if (k === "j" || k === "arrowdown") { e.preventDefault(); const n = order[Math.min(order.length - 1, cur + 1)]; if (n) select(n.id); return; }
+  if (k === "k" || k === "arrowup") { e.preventDefault(); const n = order[Math.max(0, cur - 1)]; if (n) select(n.id); return; }
+  const it = ITEMS.find((x) => x.id === selected); if (!it) return;
+  const unit = { e: "ems", f: "fire", p: "police", u: "utility", c: "callback" }[k];
+  if (unit) return deploy(it, unit);
+  if (k === "t" && it.kind === "call" && it.live) return take(it);
+  if (k === "i" && it.kind === "call" && it.live) return join(it);
+  if (k === "s") return pushSuper(it);
+  if (k === "/" && $("sayIn") && !$("sayIn").disabled) { e.preventDefault(); $("sayIn").focus(); }
+});
+$("helpBtn").onclick = () => $("help").classList.toggle("on"); $("help").onclick = (e) => { if (e.target.id === "help") $("help").classList.remove("on"); };
+$("sim").onclick = async () => { $("sim").disabled = true; const { ok } = await post("/demo/surge"); toast(ok ? "20 scripted calls are coming in" : "simulation failed", !ok); setTimeout(() => $("sim").disabled = false, 4000); };
+
+// timers + clock
+const span = (start, end) => { if (!end) return ago(start); const s = Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000)); return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s call`; };
+function updateTimers() { document.querySelectorAll(".timer[data-start]").forEach((t) => { t.textContent = (t.classList.contains("live") ? "● " : "") + span(t.dataset.start, t.dataset.end); }); }
+setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); updateTimers(); }, 1000);
+
+// live updates
+let pend = null; const live = () => { clearTimeout(pend); pend = setTimeout(refresh, 220); };
+const es = new EventSource("/events/stream");
+["packet_created", "incident_opened", "rung_changed", "trigger_fired", "turn_added", "turn_updated", "turn_translated", "language_detected", "transfer_started", "call_started", "call_ended", "units_dispatched", "call_flagged", "dispatcher_joined", "dispatcher_said", "kit_shown", "incident_closed", "incident_spread", "acknowledged_by_human"].forEach((t) => es.addEventListener(t, live));
+fetch("/kits").then((r) => r.json()).then((d) => { kits = d.kits || []; }).catch(() => {});
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

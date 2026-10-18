@@ -1,0 +1,63 @@
+:root { --red: #c8333a; --red2: #e2484e; --ink: #14171c; --mute: #5d6470; --line: #e7e3e3; --bg: #ffffff; --soft: #fdf1f1 }
+* { box-sizing: border-box }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif }
+button { font: inherit; cursor: pointer; color: inherit }
+.spacer { flex: 1 }
+.phone { max-width: 520px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg) }
+.ph-head { display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 18px) 22px 8px }
+.ph-brand { font-size: 26px; font-weight: 700; letter-spacing: -.3px }
+.ph-net { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500 } .ph-net i { width: 10px; height: 10px; border-radius: 50%; background: #23b26b } .ph-net.off i { background: #e0a020 }
+.ph-main { flex: 1; padding: 6px 22px 110px }
+.ph-hero { font-size: 32px; line-height: 1.12; letter-spacing: -.6px; margin: 14px 0 6px }
+.ph-h { font-size: 28px; letter-spacing: -.4px; margin: 14px 0 4px }
+.ph-sub { color: var(--mute); font-size: 17px; margin: 0 0 18px }
+.ph-card { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 2px 10px rgba(20,23,28,.05); margin-bottom: 16px; cursor: pointer; font-size: 16.5px }
+.ph-card a { color: var(--red); font-weight: 600 }
+.ph-call { width: 100%; display: flex; align-items: center; gap: 16px; padding: 20px; border: 0; border-radius: 16px; background: linear-gradient(180deg, var(--red2), var(--red)); color: #fff; text-align: left; box-shadow: 0 10px 24px rgba(200,51,58,.28); margin-bottom: 16px }
+.ph-call div { flex: 1 } .ph-call b { display: block; font-size: 20px } .ph-call span { font-size: 13.5px; opacity: .92 } .ph-call .chev { font-size: 28px; flex: none }
+.ph-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px }
+.ph-tile { position: relative; text-align: left; padding: 18px 16px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 2px 10px rgba(20,23,28,.05); display: flex; flex-direction: column; gap: 4px }
+.ph-tile b { font-size: 19px; margin-top: 18px } .ph-tile span { color: var(--mute); font-size: 14.5px } .ph-tile i { position: absolute; right: 14px; top: 44%; font-style: normal; font-size: 24px; color: var(--mute) }
+.ph-signal { background: var(--soft); border-radius: 18px; padding: 18px; margin-bottom: 16px }
+.ps-top { display: flex; gap: 14px } .ps-top b { display: block; color: var(--red); font-size: 19px } .ps-top span { display: block; color: #3e444e; font-size: 14.5px; margin-top: 4px }
+.ps-listen { width: 100%; margin-top: 16px; padding: 14px; border-radius: 12px; border: 1.5px solid var(--red); background: #fff; color: var(--red); font-weight: 700; font-size: 17px }
+.ps-listen.on { background: var(--red); color: #fff; animation: pulse 1.6s infinite }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(200,51,58,.45) } 70% { box-shadow: 0 0 0 14px rgba(200,51,58,0) } 100% { box-shadow: 0 0 0 0 rgba(200,51,58,0) } }
+.ps-msg { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: #fff; border: 1.5px solid #23b26b } .ps-msg.bad { border-color: #e0a020 } .ps-msg b { display: block; text-transform: capitalize } .ps-msg span { display: block; font-size: 15px; margin-top: 2px } .ps-msg small { color: var(--mute) }
+.ph-911 { text-align: center; color: var(--mute); font-size: 15px; padding: 6px 0 4px }
+.ph-alert { border-radius: 16px; padding: 16px; margin: 6px 0 14px; color: #fff; box-shadow: 0 10px 24px rgba(0,0,0,.12); animation: drop .35s ease-out }
+@keyframes drop { from { opacity: 0; transform: translateY(-8px) } to { opacity: 1; transform: none } }
+.ph-alert.red { background: #b4232a } .ph-alert.amber { background: #b86b00 } .ph-alert.blue { background: #1f5fae } .ph-alert.green { background: #19824d }
+.pa-top { display: flex; align-items: baseline; gap: 8px } .pa-top b { font-size: 13px; letter-spacing: .9px; text-transform: uppercase } .pa-top span { margin-left: auto; font-size: 12px; opacity: .85; text-align: right }
+.ph-alert p { margin: 8px 0 6px; font-size: 18px; line-height: 1.4; font-weight: 500 }
+.pa-mt { font-size: 12.5px; opacity: .85 }
+.pa-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px } .pa-acts button { flex: 1; min-width: 90px; padding: 10px 8px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,.7); background: rgba(255,255,255,.12); color: #fff; font-weight: 600; font-size: 14.5px }
+.pa-acts button.help { background: #fff; color: #b4232a; border-color: #fff } .pa-done { font-size: 14.5px; font-weight: 600; padding: 8px 0 }
+.ph-back { border: 0; background: none; color: var(--red); font-size: 16px; padding: 4px 0 }
+.ph-form { display: flex; flex-direction: column } .ph-form label { font-size: 14px; color: var(--mute); margin: 14px 0 6px; display: flex; justify-content: space-between } .ph-form label span { color: var(--ink); font-weight: 600 }
+.ph-form input, .ph-form select { font: inherit; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink) }
+.ph-form input[type=range] { padding: 0; accent-color: var(--red) }
+.seg3 { display: flex; gap: 8px } .seg3 button { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff } .seg3 button.on { border-color: var(--red); background: var(--soft); color: var(--red); font-weight: 700 }
+.ph-primary { margin-top: 20px; padding: 16px; border: 0; border-radius: 14px; background: var(--red); color: #fff; font-weight: 700; font-size: 17px }
+.ph-status { margin-top: 12px; color: var(--mute); font-size: 15px } .ph-status.center { text-align: center }
+.ph-kit { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 12px; overflow: hidden }
+.pk-head { width: 100%; display: grid; grid-template-columns: 1fr auto; text-align: left; padding: 16px; border: 0; background: #fff } .pk-head b { font-size: 17px } .pk-head span { grid-column: 1; color: var(--mute); font-size: 13.5px } .pk-head i { grid-row: 1 / 3; grid-column: 2; align-self: center; font-style: normal; font-size: 24px; color: var(--red) }
+.pk-body { padding: 0 16px 16px } .pk-body ol { padding-left: 20px; margin: 4px 0 10px } .pk-body li { margin: 8px 0 } .pk-body small { color: var(--mute) }
+.ph-beacon { width: 100%; margin-top: 30px; height: 140px; border-radius: 70px; border: 0; background: var(--red); color: #fff; font-size: 24px; font-weight: 700 } .ph-beacon.on { animation: pulse 1.4s infinite }
+.ph-empty { padding: 40px 0; color: var(--mute); text-align: center }
+.ph-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(520px, 100%); display: flex; background: #fff; border-top: 1px solid var(--line); padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px) }
+.ph-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: none; color: #555c67; font-size: 13.5px; padding: 6px 0; position: relative }
+.ph-nav button.on { color: var(--red); font-weight: 600 } .ph-nav button.on::after { content: ""; position: absolute; bottom: -8px; width: 52px; height: 3px; border-radius: 2px; background: var(--red) }
+.ph-update { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; border: 1px solid #cfe9dc; background: #f1faf5; margin: 6px 0 12px }
+.ph-update .pu-dot { width: 10px; height: 10px; border-radius: 50%; background: #23b26b; margin-top: 6px; flex: none; animation: pulse 1.6s infinite }
+.ph-update b { display: block; font-size: 15px } .ph-update span { display: block; font-size: 16px; margin-top: 2px } .ph-update small { display: block; color: var(--mute); margin-top: 4px; text-transform: capitalize }
+.ph-update.done { border-color: var(--line); background: #fafafa } .ph-update.done .pu-dot { background: #9aa1ab; animation: none }
+
+/* beacon receipts: picked up by a node, delivered to dispatch */
+.ph-ble { display: block; width: 100%; margin-top: 10px; padding: 12px; border-radius: 12px; border: 1.5px solid #c2353a; background: #fff; color: #c2353a; font-weight: 600; font-size: 15px; }
+.ph-receipts { display: grid; gap: 8px; margin-top: 16px; }
+.ph-rc { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #f4f2ee; color: #6b7280; }
+.ph-rc .dot { width: 12px; height: 12px; border-radius: 50%; background: #d1cdc4; flex: none; }
+.ph-rc b { display: block; color: #1f2937; font-size: 14px; } .ph-rc span { font-size: 12.5px; }
+.ph-rc.ok { background: #e9f8f4; } .ph-rc.ok .dot { background: #1a9d7c; }
+.ph-status.small { font-size: 12px; margin-top: 8px; }
