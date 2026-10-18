@@ -35,6 +35,7 @@ export class Engine {
     const s = this.store;
     packet.packet_id ||= s.nextId("pk");
     s.packets.push(packet);
+    packet.triggers = triggers; // stored for _rebuild
     s.appendEvent({
       event_type: "packet_created",
       packet_id: packet.packet_id,
@@ -64,8 +65,9 @@ export class Engine {
 
   // -------------------------------------------------------------------------
   // Scan layer: Poisson tail against the zone's hourly baseline
+  // delta = +1 normally; pass -1 when refinement moves the packet out of a zone window
   // -------------------------------------------------------------------------
-  _scanLayer(packet) {
+  _scanLayer(packet, delta = 1) {
     const s = this.store;
     const t = new Date(packet.received_at).getTime();
     const windowStart = new Date(Math.floor(t / E.scanWindowMs) * E.scanWindowMs).toISOString();
@@ -75,7 +77,7 @@ export class Engine {
       w = { zone_id: packet.zone_id, window_start: windowStart, n: 0, p_tail: null, flagged: false };
       s.zoneWindows.push(w);
     }
-    w.n += 1;
+    w.n = Math.max(0, w.n + delta);
 
     const hour = new Date(windowStart).getUTCHours();
     const base = s.baselines.find((b) => b.zone_id === packet.zone_id && b.hour === hour);
@@ -93,6 +95,97 @@ export class Engine {
         payload_json: { zone_id: w.zone_id, window_start: w.window_start, n: w.n, p_tail: w.p_tail, lambda },
       });
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Refine an existing packet in-place as more transcript arrives.
+  // Called by retell_ws on every response_required instead of creating a new packet.
+  // -------------------------------------------------------------------------
+  refine(packet, fields, triggers = { hard: [], soft: [] }) {
+    const old = this.store.incidents.find((i) => i.id === packet.incident_id);
+    packet.reported_fields = fields;
+    // Accumulate triggers across turns
+    packet.triggers = {
+      hard: [...new Set([...(packet.triggers?.hard || []), ...(triggers.hard || [])])],
+      soft: [...new Map(
+        [...(packet.triggers?.soft || []), ...(triggers.soft || [])].map((t) => [JSON.stringify(t), t])
+      ).values()],
+    };
+
+    // Has the zone or target shifted to something more specific?
+    const moving =
+      old &&
+      (
+        (fields.zone_id && fields.zone_id !== "unknown" && fields.zone_id !== old.zone_id) ||
+        (fields.target && fields.target !== "unknown" && fields.target !== old.target)
+      );
+
+    // If a human has already acted on this incident, keep its location and file the update for review only
+    const acted =
+      old &&
+      (
+        (old.dispatched || []).length ||
+        old.closed_at ||
+        this.store.events.some((e) => e.incident_id === old.id && e.event_type === "acknowledged_by_human")
+      );
+
+    if (!(moving && acted)) {
+      if (moving) {
+        old.packet_ids = old.packet_ids.filter((id) => id !== packet.packet_id);
+        delete packet.incident_id;
+        if (!old.packet_ids.length) {
+          this.store.incidents = this.store.incidents.filter((i) => i.id !== old.id);
+        } else {
+          this._rebuild(old);
+        }
+      }
+      const previousZone = packet.zone_id;
+      for (const key of ["zone_id", "target", "severity", "action", "content_status", "language"]) {
+        if (fields[key] !== undefined && fields[key] !== "unknown") packet[key] = fields[key];
+      }
+      if (previousZone !== packet.zone_id) {
+        this._scanLayer({ ...packet, zone_id: previousZone }, -1);
+        this._scanLayer(packet);
+      }
+      if (fields.target && fields.target !== "unknown") packet.intake_pending = false;
+    }
+
+    const inc = (!moving || acted) ? old : null;
+    const current = inc || this._attach(packet);
+    this._rebuild(current);
+    this._spread(current, packet);
+    this.store.appendEvent({
+      event_type: "packet_updated",
+      packet_id: packet.packet_id,
+      call_id: packet.call_id,
+      incident_id: current.id,
+      actor: "ai",
+      provenance: packet.provenance,
+      payload_json: { source: packet.source },
+    });
+    this.store.save();
+    return current;
+  }
+
+  // Recompute all incident-level aggregates from its constituent packets (used by refine).
+  _rebuild(inc) {
+    const packets = this.store.packets.filter((p) => inc.packet_ids.includes(p.packet_id));
+    inc.keys = {};
+    for (const p of packets) {
+      if (!E.machineSources.includes(p.source)) {
+        inc.keys[p.independence_key] = (inc.keys[p.independence_key] || 0) + 1;
+      }
+    }
+    inc.independent_count = Object.keys(inc.keys).length;
+    inc.repeat_count = Object.values(inc.keys).reduce((n, count) => n + count - 1, 0);
+    inc.machine_count = packets.filter((p) => E.machineSources.includes(p.source)).length;
+    inc.max_severity = Math.max(0, ...packets.map((p) => p.severity));
+    inc.soft_weight = 0;
+    inc.triggers = [];
+    this._rescore(inc, packets.at(-1), {
+      hard: packets.flatMap((p) => p.triggers?.hard || []),
+      soft: packets.flatMap((p) => p.triggers?.soft || []),
+    });
   }
 
   // -------------------------------------------------------------------------
