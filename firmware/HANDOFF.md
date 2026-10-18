@@ -2,11 +2,11 @@
 
 Send this folder (`firmware/`) only. The dashboard code is not needed on the chip.
 
-**Server address:** `SERVER_URL` is the EchoHawk server's public https address. (Written below once the
-deployment is live.)
+**Server address:** `SERVER_URL` is the EchoHawk server's public https address (live on Railway).
 
 ```
-SERVER_URL = https://________________________   (no trailing slash)
+SERVER_URL = https://echohawk-production-505f.up.railway.app   (no trailing slash)
+FRAME_KEY  = dev-frame-key
 ```
 
 ## Two sketches, pick one per chip (there is no automatic fallback between them)

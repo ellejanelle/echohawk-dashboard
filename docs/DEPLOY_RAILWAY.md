@@ -1,5 +1,8 @@
 # Deploying EchoHawk to Railway
 
+Live deployment (2026-10-17): project `echohawk`, service `echohawk`, region us-west2, volume `echohawk-data` at `/var/data`,
+domain https://echohawk-production-505f.up.railway.app. Frame key is the demo value; tokens are random and live only in Railway variables.
+
 One always-on Node service, one replica, a persistent volume for the snapshot, a public Railway domain.
 `railway.json` in the repo root carries the build and deploy settings (Railpack, `npm ci && npm run build:web`,
 `npm start`, health check `/health`, sleeping off, restart on failure). The volume and the variables are set in the
