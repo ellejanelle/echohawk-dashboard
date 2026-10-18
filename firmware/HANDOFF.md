@@ -9,6 +9,25 @@ SERVER_URL = https://echohawk-production-505f.up.railway.app   (no trailing slas
 FRAME_KEY  = dev-frame-key
 ```
 
+## Fastest path tonight: keep your sketch, add the USB bridge
+
+If the chip already prints a line over USB when the wire is held (and another when it is held longer to cancel), you do
+not need to reflash it. A small script on the laptop the chip is plugged into reads those lines and sends the signed SOS
+to the server; the server's receipt is written back over the same cable.
+
+1. Close Arduino's Serial Monitor (only one program can hold the USB port).
+2. In the repo folder: `npm install serialport`
+3. Run it, with the words your sketch prints for alert and cancel:
+   ```
+   ALERT_MATCH="SOS|ALERT" CANCEL_MATCH="CANCEL" node scripts/usb_bridge.mjs
+   ```
+   (`SERIAL_PORT=/dev/cu.usbserial-0001` or `COM5` if it picks the wrong port; `BAUD=` if the sketch is not 115200.)
+4. Hold the wire. The terminal prints `on the board: incident inc_…`, and the row appears on the dashboard without a
+   refresh. Hold to cancel: the incident is marked "sender cancelled"; a person closes it on the board.
+
+Device identity: if the sketch prints the chip's MAC at boot (`Serial.println(WiFi.macAddress());`), the bridge uses it
+as the device id, and the board shows `TAG-<mac>`. Otherwise set `DEVICE_ID=tag01`.
+
 ## Two sketches, pick one per chip (there is no automatic fallback between them)
 
 | Folder | Path | Needs |

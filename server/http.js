@@ -237,6 +237,20 @@ export function createHttpServer({ store, engine, hub }) {
         const stage = body.stage === "delivered" ? "delivered" : "picked_up";
         return json(res, 200, { ack_b64: toBase64(ackFrame({ stage, sequence, node, language: body.language || "en" }, config.frameKey)) });
       }
+      // The sender held the button to cancel. Noted on the incident; a person still closes it (nothing automated closes an SOS).
+      if (path === "/device/cancel" && method === "POST") {
+        const body = JSON.parse((await readBody(req)).toString() || "{}");
+        const sequence = Number(body.sequence);
+        const packet = body.incident_id
+          ? store.packets.find((p) => p.incident_id === body.incident_id)
+          : store.packets.filter((p) => p.frame_sequence === sequence).at(-1);
+        const inc = packet && store.incidents.find((i) => i.id === packet.incident_id);
+        if (!inc) return json(res, 404, { error: "no open report for that sequence" });
+        inc.sender_cancelled_at = new Date().toISOString();
+        store.appendEvent({ event_type: "sender_cancelled", incident_id: inc.id, packet_id: packet.packet_id, actor: "device", provenance: "forwarded", payload_json: { node_id: String(body.node_id || ""), sequence: packet.frame_sequence ?? null } });
+        store.save();
+        return json(res, 200, { ok: true, incident_id: inc.id, closed: false });
+      }
 
       if (path === "/incidents" && method === "GET") {
         const rung = url.searchParams.get("rung");

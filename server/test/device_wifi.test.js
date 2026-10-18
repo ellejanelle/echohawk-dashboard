@@ -147,3 +147,19 @@ test("D4-W5: Store persists to a configurable path and reloads after a restart",
   assert.equal(b.incidents.length, 1);
   assert.equal(b.incidents[0].id, "inc_test");
 });
+
+// ── D4-W6: sender cancel is noted on the incident and never closes it ─────────
+
+test("D4-W6: /device/cancel marks the incident sender_cancelled without closing it", () => withServer(async ({ port, store }) => {
+  const frame_b64 = sosSigned(77);
+  const r1 = await fetch(`http://localhost:${port}/device/packets`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ node_id: "TAG-USB", channel: "wifi", frame_b64 }) });
+  const { incident_id } = await r1.json();
+  const r2 = await fetch(`http://localhost:${port}/device/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sequence: 77, node_id: "TAG-USB" }) });
+  assert.equal(r2.status, 200);
+  const inc = store.incidents.find((i) => i.id === incident_id);
+  assert.ok(inc.sender_cancelled_at);
+  assert.ok(!inc.closed_at);
+  assert.ok(store.events.some((e) => e.event_type === "sender_cancelled" && e.incident_id === incident_id));
+  const r3 = await fetch(`http://localhost:${port}/device/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sequence: 9999 }) });
+  assert.equal(r3.status, 404);
+}));
