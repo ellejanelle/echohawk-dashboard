@@ -100,6 +100,62 @@ export function createHttpServer({ store, engine, hub }) {
     return "anon";
   };
 
+  // ── device packets (node relay) ───────────────────────────────────────
+  // One chirp heard by several nodes counts once; which nodes heard narrows location.
+  const devicePacket = (body) => {
+    let frame = null;
+    if (body.frame_b64) {
+      frame = readFrame(body.frame_b64, config.frameKey);
+      if (!frame.ok) {
+        store.appendEvent({ event_type: "frame_rejected", actor: "device", provenance: "forwarded", payload_json: { node_id: String(body.node_id || ""), error: frame.error } });
+        return { status: 400, body: { error: frame.error } };
+      }
+    }
+    // Signed ack back to the sender: "delivered to dispatch"
+    const receipt = frame && body.node_id
+      ? toBase64(ackFrame({ stage: "delivered", sequence: frame.sequence, node: String(body.node_id), language: frame.language }, config.frameKey))
+      : null;
+    const hearing = recordHearing(store, body);
+    if (hearing.duplicate) {
+      return { status: 200, body: { duplicate: true, packet_id: hearing.packet?.packet_id || null, incident_id: hearing.packet?.incident_id || null, heard_by: hearing.heard_by, approx_area: hearing.packet?.approx_area || null, picked_up: hearing.packet?.picked_up || null, ack_b64: receipt } };
+    }
+    const input = frame ? { ...frame.fields, ...body, ...frame.fields } : body;
+    const zone = input.zone_id || zoneOfNode(hearing.node) || undefined;
+    const { packet, errors } = makePacket({ ...input, zone_id: zone, source: body.source || "ehawk", provenance: body.provenance || "forwarded" });
+    if (errors.length) return { status: 400, body: { errors } };
+    const triggers = input.text ? scanTurn(input.text) : { hard: [], soft: [] };
+    if (frame?.type === "sos") triggers.hard = [...new Set([...triggers.hard, "sos_beacon"])];
+    triageSelfReport(packet, triggers);
+    packet.packet_id ||= store.nextId("pk");
+    rememberFirst(store, hearing.key, hearing.node, packet, Date.now(), hearing.channel);
+    if (frame) {
+      packet.request_kind = frame.type === "sos" ? "help_request" : "report";
+      packet.intake_pending = frame.type === "sos";
+      packet.frame_type = frame.type;
+      packet.frame_sequence = frame.sequence;
+      packet.delivered_at = new Date().toISOString();
+    }
+    const out = engine.ingest(packet, { triggers });
+    if (frame && hearing.node) {
+      store.appendEvent({ event_type: "report_picked_up", packet_id: packet.packet_id, incident_id: out.incident?.id || null, actor: "device", provenance: "forwarded", payload_json: { node_id: hearing.node, channel: hearing.channel, sequence: frame.sequence, zone_id: packet.zone_id } });
+    }
+    return { status: 201, body: { packet_id: packet.packet_id, incident_id: out.incident?.id || null, rung: out.rung, severity: packet.severity, triage_note: packet.triage_note || null, heard_by: packet.heard_by || [], approx_area: packet.approx_area || null, picked_up: packet.picked_up || null, ack_b64: receipt } };
+  };
+
+  // Sender cancel: marks the incident, appends sender_cancelled, never closes it.
+  const deviceCancel = (body) => {
+    const sequence = Number(body.sequence);
+    const packet = body.incident_id
+      ? store.packets.find((p) => p.incident_id === body.incident_id)
+      : store.packets.filter((p) => p.frame_sequence === sequence).at(-1);
+    const inc = packet && store.incidents.find((i) => i.id === packet.incident_id);
+    if (!inc) return { status: 404, body: { error: "no open report for that sequence" } };
+    inc.sender_cancelled_at = new Date().toISOString();
+    store.appendEvent({ event_type: "sender_cancelled", incident_id: inc.id, packet_id: packet.packet_id, actor: "device", provenance: "forwarded", payload_json: { node_id: String(body.node_id || ""), sequence: packet.frame_sequence ?? null } });
+    store.save();
+    return { status: 200, body: { ok: true, incident_id: inc.id, closed: false } };
+  };
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const path = url.pathname;
@@ -146,47 +202,6 @@ export function createHttpServer({ store, engine, hub }) {
         return json(res, 200, { ok: true });
       }
 
-      // ── device packets (node relay) ───────────────────────────────────────
-      // One chirp heard by several nodes counts once; which nodes heard narrows location.
-      const devicePacket = (body) => {
-        let frame = null;
-        if (body.frame_b64) {
-          frame = readFrame(body.frame_b64, config.frameKey);
-          if (!frame.ok) {
-            store.appendEvent({ event_type: "frame_rejected", actor: "device", provenance: "forwarded", payload_json: { node_id: String(body.node_id || ""), error: frame.error } });
-            return { status: 400, body: { error: frame.error } };
-          }
-        }
-        // Signed ack back to the sender: "delivered to dispatch"
-        const receipt = frame && body.node_id
-          ? toBase64(ackFrame({ stage: "delivered", sequence: frame.sequence, node: String(body.node_id), language: frame.language }, config.frameKey))
-          : null;
-        const hearing = recordHearing(store, body);
-        if (hearing.duplicate) {
-          return { status: 200, body: { duplicate: true, packet_id: hearing.packet?.packet_id || null, incident_id: hearing.packet?.incident_id || null, heard_by: hearing.heard_by, approx_area: hearing.packet?.approx_area || null, picked_up: hearing.packet?.picked_up || null, ack_b64: receipt } };
-        }
-        const input = frame ? { ...frame.fields, ...body, ...frame.fields } : body;
-        const zone = input.zone_id || zoneOfNode(hearing.node) || undefined;
-        const { packet, errors } = makePacket({ ...input, zone_id: zone, source: body.source || "ehawk", provenance: body.provenance || "forwarded" });
-        if (errors.length) return { status: 400, body: { errors } };
-        const triggers = input.text ? scanTurn(input.text) : { hard: [], soft: [] };
-        if (frame?.type === "sos") triggers.hard = [...new Set([...triggers.hard, "sos_beacon"])];
-        triageSelfReport(packet, triggers);
-        packet.packet_id ||= store.nextId("pk");
-        rememberFirst(store, hearing.key, hearing.node, packet, Date.now(), hearing.channel);
-        if (frame) {
-          packet.request_kind = frame.type === "sos" ? "help_request" : "report";
-          packet.intake_pending = frame.type === "sos";
-          packet.frame_type = frame.type;
-          packet.frame_sequence = frame.sequence;
-          packet.delivered_at = new Date().toISOString();
-        }
-        const out = engine.ingest(packet, { triggers });
-        if (frame && hearing.node) {
-          store.appendEvent({ event_type: "report_picked_up", packet_id: packet.packet_id, incident_id: out.incident?.id || null, actor: "device", provenance: "forwarded", payload_json: { node_id: hearing.node, channel: hearing.channel, sequence: frame.sequence, zone_id: packet.zone_id } });
-        }
-        return { status: 201, body: { packet_id: packet.packet_id, incident_id: out.incident?.id || null, rung: out.rung, severity: packet.severity, triage_note: packet.triage_note || null, heard_by: packet.heard_by || [], approx_area: packet.approx_area || null, picked_up: packet.picked_up || null, ack_b64: receipt } };
-      };
 
       // ── demo endpoints ────────────────────────────────────────────────────
       if (path === "/demo/reset" && method === "POST") {
@@ -240,16 +255,8 @@ export function createHttpServer({ store, engine, hub }) {
       // The sender held the button to cancel. Noted on the incident; a person still closes it (nothing automated closes an SOS).
       if (path === "/device/cancel" && method === "POST") {
         const body = JSON.parse((await readBody(req)).toString() || "{}");
-        const sequence = Number(body.sequence);
-        const packet = body.incident_id
-          ? store.packets.find((p) => p.incident_id === body.incident_id)
-          : store.packets.filter((p) => p.frame_sequence === sequence).at(-1);
-        const inc = packet && store.incidents.find((i) => i.id === packet.incident_id);
-        if (!inc) return json(res, 404, { error: "no open report for that sequence" });
-        inc.sender_cancelled_at = new Date().toISOString();
-        store.appendEvent({ event_type: "sender_cancelled", incident_id: inc.id, packet_id: packet.packet_id, actor: "device", provenance: "forwarded", payload_json: { node_id: String(body.node_id || ""), sequence: packet.frame_sequence ?? null } });
-        store.save();
-        return json(res, 200, { ok: true, incident_id: inc.id, closed: false });
+        const out = deviceCancel(body);
+        return json(res, out.status, out.body);
       }
 
       if (path === "/incidents" && method === "GET") {
@@ -611,5 +618,7 @@ export function createHttpServer({ store, engine, hub }) {
     }
   });
 
+  server.devicePacket = devicePacket;
+  server.deviceCancel = deviceCancel;
   return server;
 }

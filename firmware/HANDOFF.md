@@ -9,7 +9,16 @@ SERVER_URL = https://echohawk-production-505f.up.railway.app   (no trailing slas
 FRAME_KEY  = dev-frame-key
 ```
 
-## Fastest path tonight: keep your sketch, add the USB bridge
+## Your sketch (`relay_node/relay_node.ino`): point it at the server, nothing else changes
+
+The server now speaks your WebSocket protocol (`relay_node/PROTOCOL.md`) at `wss://echohawk-production-505f.up.railway.app/node`.
+The copy in `relay_node/` already has `DASH_HOST`, `DASH_PORT 443` and `DASH_USE_SSL true` set; fill in `WIFI_SSID` and
+`WIFI_PASS` (2.4 GHz, no sign-in page) and upload. Hold the D32 wire to GND 1.5 s: the alert lands on the board as
+"needs a person, picked up by echohawk-01 over wifi", the server acks, the relay clicks and the LED goes solid. Hold again
+within 10 s: the incident is marked "sender cancelled" (a person closes it on the board). Audio frames are answered with
+`stop_audio`; this build does not store audio.
+
+## No Wi-Fi? Keep your sketch, add the USB bridge
 
 If the chip already prints a line over USB when the wire is held (and another when it is held longer to cancel), you do
 not need to reflash it. A small script on the laptop the chip is plugged into reads those lines and sends the signed SOS

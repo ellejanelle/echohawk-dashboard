@@ -5,6 +5,7 @@ import { Store } from "./store.js";
 import { Engine } from "./engine.js";
 import { RetellHub } from "./retell_ws.js";
 import { createHttpServer } from "./http.js";
+import { attachNodeSocket } from "./node_ws.js";
 import { loadAdjacency, loadBaselines } from "./seed.js";
 
 // Snapshot path: DB_PATH on a hosted volume (Railway: /var/data/db.json), data/db.json locally.
@@ -24,6 +25,7 @@ store.save();
 const hub = new RetellHub({ store, engine });
 const server = createHttpServer({ store, engine, hub });
 hub.attach(server);
+attachNodeSocket(server, { store });
 server.listen(config.port, config.host, () => {
   console.log(`EchoHawk on http://localhost:${config.port}  board=/  console=/console  app=/app  chirp=/chirp  (snapshot: ${config.dbPath})`);
   console.log(`Retell custom LLM websocket: ${config.publicBaseUrl.replace(/^http/, "ws")}/retell/llm/{call_id}`);

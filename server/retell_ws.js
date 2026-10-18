@@ -61,7 +61,7 @@ export class RetellHub {
     this.wss = new WebSocketServer({ noServer: true });
     httpServer.on("upgrade", (req, socket, head) => {
       const m = req.url.match(/^\/retell\/llm\/([^/?]+)/);
-      if (!m) { socket.destroy(); return; }
+      if (!m) { if (!/^\/node(\?|$)/.test(req.url)) socket.destroy(); return; } // /node upgrades belong to node_ws.js
       this.wss.handleUpgrade(req, socket, head, (ws) =>
         this.onConnection(ws, decodeURIComponent(m[1]))
       );
