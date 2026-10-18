@@ -10,6 +10,8 @@ export interface ApproxArea { lat: number; lon: number; radius_m: number; nodes:
 export interface HistoryFile { source: string; days: number; from: string; to: string; excluded: string; categories: string[]; rd: Record<string, Record<string, number>> }
 
 export interface Incident {
+  source_counts?: Record<string, number>;
+  intake_pending?: boolean;
   id: string;
   zone_id: string;
   target: string;
@@ -48,6 +50,8 @@ export interface Packet {
 export interface ZoneWindow { zone_id: string; window_start: string; n: number; flagged: boolean; p_tail: number | null }
 
 export interface Call {
+  source?: string;
+  intake_pending?: boolean;
   resident_demo?: boolean;
   resident_line?: string;
   id: string;
@@ -73,7 +77,7 @@ export interface Call {
 export interface Turn { role: "user" | "agent" | "dispatcher" | "system"; text_original: string; text_translated?: string | null; lang_original?: string }
 export interface Kit { kit_id: string; title: string; mode: string; medical_review: string; display_steps?: string[]; summary?: string }
 export interface OpenCallback { zone_id?: string; target?: string; attempts: number; last_result: string; minutes_since_first_report?: number | null }
-export interface Health { ok: boolean; mode: string; calls_active: number; paid_concurrency: number }
+export interface Health { ok: boolean; mode: string; calls_active: number; requests_open: number; paid_concurrency: number }
 export interface Meter { retell_cents_today: number; dispatcher_minutes_saved_est: number; stream: string }
 
 export interface EventRow {

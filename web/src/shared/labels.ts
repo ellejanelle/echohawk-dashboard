@@ -11,13 +11,13 @@ export const tIcon = (t?: string) => (TARGET[t || "unknown"] || TARGET.unknown)[
 export const tName = (t?: string) => (TARGET[t || "unknown"] || [null, String(t || "unknown").replace(/_/g, " ")])[1] as string;
 
 export const TRIG: Record<string, string> = {
-  asks_for_human: "asked for a person", sos_beacon: "SOS beacon (cannot call)", breathing_qualified: "trouble breathing", dependent_alone: "child or dependent alone", distress: "caller in distress",
+  asks_for_human: "asked for a person", sos_beacon: "emergency help requested", breathing_qualified: "trouble breathing", dependent_alone: "child or dependent alone", distress: "caller in distress",
   electrical: "live electrical hazard", gas_or_pressure: "gas or pressure hazard", insists_higher_severity: "says it is worse", self_harm: "self harm risk",
   severe_bleeding: "severe bleeding", third_party_vulnerable: "vulnerable person", trapped: "someone trapped", unconscious: "unconscious", violence: "violence",
 };
 export const trig = (t: string) => TRIG[t] || t.replace(/_/g, " ");
 export const plainReason = (r?: string) =>
-  String(r || "").replace(/hard trigger: ([a-z_, ]+)/, (_, x: string) => "caller said: " + x.split(/,\s*/).map(trig).join(", ")).replace(/independent sources/g, "independent callers");
+  String(r || "").replace(/hard trigger: ([a-z_, ]+)/, (_, x: string) => "priority signal: " + x.split(/,\s*/).map(trig).join(", ")).replace(/independent sources/g, "independent sources");
 
 export const RUNG_LABEL: Record<Rung, string> = { hand: "Needs a person", ask: "Check now", watch: "Watching" };
 
@@ -41,3 +41,7 @@ export function suggest(action?: string, target?: string): Unit[] {
 export const isMachineOnly = (i: Incident) => !i.independent_count && (i.machine_count || 0) > 0;
 
 export const ZONES = Array.from({ length: 16 }, (_, i) => `Z${String(i + 1).padStart(2, "0")}`);
+
+export const SOURCE: Record<string, string> = { voice: 'Phone call', app: 'App request', ehawk: 'Device request', field_unit: 'Field report', telemetry: 'Alarm or sensor' };
+export const sourcesLabel = (counts?: Record<string, number>) => Object.entries(counts || {}).filter(([, n]) => n > 0).map(([source, n]) => `${n} ${SOURCE[source]?.toLowerCase() || source}${n > 1 ? 's' : ''}`).join(' · ');
+export const requestTitle = (request: { intake_pending?: boolean; target?: string }) => request.intake_pending ? 'Emergency help requested' : tName(request.target);

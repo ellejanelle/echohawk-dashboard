@@ -72,3 +72,8 @@ read-only reference. The resident app was copied unchanged. Prompts: docs/BOB_DA
 
 | # | Time (PT) | Stage | Tests before → after | Bob cost | Commit |
 |---|---|---|---|---|---|
+| D0 | 5:20 PM | git init, initial commit, baseline test run (no server code yet) | all 13 test files fail on missing modules | 0.40 | 5d09a47 |
+| D1 | 5:44 PM | foundations: config, env, store, schema, kits, triggers, triage, languages, same_decoder, llm | 0 → 21/31 runnable (languages 17/17, zone 1/1, claude 3/3) | 2.90 | 62caaa5 |
+| D2 | 5:50 PM | engine, units, callbacks, relay, research, broadcasts | 21/31 → 53/63 runnable (remaining failures only need http.js / retell_ws.js) | 4.03 | 04c49d0 |
+| D3 | 6:02 PM | retell_ws, http, fake client, replay, resident, provisioning (seed checked) | 53/63 → 105/105 | 9.20 | a2fde91 |
+| D4 | 6:26 PM | server/index.js, Wi-Fi device test (3 cases), firmware commit | 105 → 108/108 | 2.88 | be9b9f6 |
