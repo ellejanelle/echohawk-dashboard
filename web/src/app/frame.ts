@@ -76,6 +76,10 @@ export async function signFrame(f: { type: string; zone: number; target: string;
 // ---- ggwave (vendored at /vendor/ggwave.js, loaded by the page as a global) ----
 declare global { interface Window { ggwave_factory?: () => Promise<any> } }
 let gg: any = null, inst: any = null, ctx: AudioContext | null = null;
+export async function prepareChirp() {
+  ctx ||= new AudioContext({ sampleRate: 48000 });
+  if (ctx.state === 'suspended') await ctx.resume();
+}
 async function init() {
   if (gg) return;
   if (!window.ggwave_factory) throw new Error("chirp modem not loaded");
@@ -87,6 +91,7 @@ async function init() {
 function convert(src: ArrayBufferView, Type: any) { const buf = new ArrayBuffer(src.byteLength); new (src.constructor as any)(buf).set(src); return new Type(buf); }
 
 export async function listen(onBytes: (b: Uint8Array) => void): Promise<() => void> {
+  await prepareChirp();
   await init();
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false } });
   const src = ctx!.createMediaStreamSource(stream);
@@ -97,6 +102,7 @@ export async function listen(onBytes: (b: Uint8Array) => void): Promise<() => vo
 }
 
 export async function chirp(bytes: Uint8Array) {
+  await prepareChirp();
   await init();
   const wave = gg.encode(inst, bytes, gg.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST, 10);
   const buf = convert(new Int8Array(wave), Float32Array);

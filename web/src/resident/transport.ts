@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { signFrame, readAck, b64, unb64, NUS_UUIDS } from '../app/frame';
+import { signFrame, readAck, b64, unb64, NUS_UUIDS, listen, chirp, prepareChirp } from '../app/frame';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 
 export type Envelope = { version: 1; message_id: string; device_id: string; type: 'report' | 'beacon'; created_at: string; expires_at: string; zone_id: string; target: string; severity: number; action: string; text: string; frame_b64?: string; sequence?: number };
@@ -25,13 +25,13 @@ export function normalizeZone(zone: string) {
   return m && +m[1] >= 1 && +m[1] <= 16 ? 'Z' + m[1].padStart(2, '0') : /^\d{3,4}$/.test(z) ? z.padStart(4, '0') : z;
 }
 export async function envelope(device: string, zone: string, type: 'report' | 'beacon', text: string, target = 'person', wire: Settings['wire'] = 'json', language = 'en'): Promise<Envelope> {
-  zone = normalizeZone(zone);
+  zone = normalizeZone(zone) || (type === 'beacon' ? 'unknown' : '');
   if (!/^[A-Za-z0-9_-]{1,24}$/.test(zone)) throw new Error('Set your district or zone in Settings first.');
   const now = Date.now();
-  const message: Envelope = { version: 1, message_id: crypto.randomUUID(), device_id: device, type, zone_id: zone, target, severity: type === 'beacon' ? 5 : 2, action: type === 'beacon' ? 'welfare_check' : 'info_only', text: text.slice(0, 120), created_at: new Date(now).toISOString(), expires_at: new Date(now + (wire === 'frame16' ? 600000 : 86400000)).toISOString() };
+  const message: Envelope = { version: 1, message_id: crypto.randomUUID(), device_id: device, type, zone_id: zone, target, severity: type === 'beacon' ? 5 : 2, action: type === 'beacon' ? 'unknown' : 'info_only', text: text.slice(0, 120), created_at: new Date(now).toISOString(), expires_at: new Date(now + (wire === 'frame16' ? 600000 : 86400000)).toISOString() };
   if (wire === 'frame16') {
-    const radioZone = Number(zone.replace(/^Z/, ''));
-    if (!Number.isInteger(radioZone) || radioZone < 1 || radioZone > 65535) throw new Error('This radio profile needs a numeric district or a demo zone such as Z06.');
+    const radioZone = zone === 'unknown' && type === 'beacon' ? 0 : Number(zone.replace(/^Z/, ''));
+    if (!Number.isInteger(radioZone) || radioZone < 0 || radioZone > 65535) throw new Error('This radio profile needs a numeric district or a demo zone such as Z06.');
     message.sequence = crypto.getRandomValues(new Uint16Array(1))[0];
     message.frame_b64 = b64(await signFrame({ type: type === 'beacon' ? 'sos' : 'checkin', zone: radioZone, target, severity: message.severity, action: message.action, language, sequence: message.sequence }));
   }
@@ -100,4 +100,34 @@ export class NodeRelay {
     this.serial = job; return job;
   }
   async disconnect() { const id = this.deviceId; this.deviceId = undefined; if (id) await BleClient.disconnect(id).catch(() => {}); }
+}
+
+// Sound sends the same signed frame as Bluetooth. Only a verified acknowledgement changes delivery state.
+export class SoundRelay {
+  private stop?: () => void;
+  private pending = new Map<string, Envelope>();
+  private lastSent = new Map<string, number>();
+  get enabled() { return !!this.stop; }
+  constructor(private onReceipt: (id: string, state: 'node_received' | 'dashboard_received') => void) {}
+  async connect() {
+    await prepareChirp();
+    if (this.stop) return;
+    this.stop = await listen(bytes => {
+      for (const message of this.pending.values()) {
+        if (message.sequence === undefined || Date.parse(message.expires_at) <= Date.now()) continue;
+        void readAck(bytes, message.sequence).then(ack => {
+          if (ack && [1, 2, 3].includes(ack.stage)) this.onReceipt(message.message_id, ack.stage >= 2 ? 'dashboard_received' : 'node_received');
+        });
+      }
+    });
+  }
+  async send(message: Envelope) {
+    if (!this.enabled || !message.frame_b64) throw new Error('Enable sound fallback with the signed-frame demo profile first.');
+    if (Date.parse(message.expires_at) <= Date.now()) throw new Error('This request has expired.');
+    if (Date.now() - (this.lastSent.get(message.message_id) || 0) < 60000) return;
+    this.pending.set(message.message_id, message);
+    await chirp(unb64(message.frame_b64));
+    this.lastSent.set(message.message_id, Date.now());
+  }
+  disconnect() { this.stop?.(); this.stop = undefined; }
 }

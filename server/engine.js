@@ -195,10 +195,13 @@ export class Engine {
     const s = this.store;
     const now = new Date(packet.received_at).getTime();
 
-    // Reuse an open incident for the same zone+target within the keep-alive window
+    // Reuse an open incident for the same zone+target within the keep-alive window.
+    // Unknown-zone incidents are only merged when the same independence key already contributed
+    // (i.e. same device / call / relay key): two separate unknowns must stay separate.
     let inc = s.incidents.find(
       (i) =>
         i.zone_id === packet.zone_id &&
+        (packet.zone_id !== "unknown" || i.keys?.[packet.independence_key]) &&
         i.target === packet.target &&
         !i.closed_at &&
         now - new Date(i.last_packet_at).getTime() <= E.keepAliveMs
@@ -390,7 +393,14 @@ export class Engine {
       .filter((p) => (p.heard_by || []).length)
       .sort((a, b) => b.heard_by.length - a.heard_by.length)[0];
     const held = ps.filter((p) => p.reported_severity);
+    const source_counts = Object.fromEntries(
+      ["voice", "app", "ehawk", "field_unit", "telemetry"].map((src) => [
+        src, ps.filter((p) => p.source === src).length,
+      ])
+    );
     return {
+      source_counts,
+      intake_pending: ps.length > 0 && ps.every((p) => p.intake_pending),
       heard_by: withNodes?.heard_by || [],
       hearings: withNodes?.hearings || [],
       picked_up: withNodes?.picked_up || null,

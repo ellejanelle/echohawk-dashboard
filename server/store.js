@@ -8,6 +8,7 @@ import { dirname } from "node:path";
 const TABLES = [
   "calls", "turns", "packets", "incidents", "events",
   "kitShows", "callbacks", "baselines", "zoneWindows", "twists", "costMeter",
+  "relays", "broadcasts", "alerts",
 ];
 
 export class Store {
@@ -16,13 +17,13 @@ export class Store {
    */
   constructor(path = null) {
     this.path = path;
-    for (const t of TABLES) this[t] = [];
+    for (const t of TABLES) this[t] = t === "relays" ? {} : [];
     this._seq = 0;
 
     if (path && existsSync(path)) {
       try {
         const snap = JSON.parse(readFileSync(path, "utf8"));
-        for (const t of TABLES) this[t] = snap[t] || [];
+        for (const t of TABLES) this[t] = t === "relays" ? (snap[t] && !Array.isArray(snap[t]) ? snap[t] : {}) : (snap[t] || []);
         this._seq = snap._seq || 0;
       } catch {
         // Corrupt snapshot: start clean rather than crashing.

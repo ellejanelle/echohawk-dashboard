@@ -58,7 +58,8 @@ export function readFrame(b64, key) {
     return { ok: false, error: `a ${f.type} frame is not a report` };
 
   const zone_id =
-    f.zone >= 1 && f.zone <= 16
+    f.zone === 0 ? "unknown"
+    : f.zone >= 1 && f.zone <= 16
       ? `Z${String(f.zone).padStart(2, "0")}`
       : String(f.zone).padStart(4, "0");
 

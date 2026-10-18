@@ -2,6 +2,7 @@ import { cp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 // This folder contains generated output only. Remove stale hashed bundles.
 await rm('mobile-dist', { recursive: true, force: true });
 await mkdir('mobile-dist', { recursive: true });
+await cp('../vendor/ggwave.js', 'mobile-dist/vendor/ggwave.js', { recursive: true });
 await cp('dist/assets', 'mobile-dist/assets', { recursive: true });
 await cp('../app/media', 'mobile-dist/app/media', { recursive: true });
 await cp('dist/app/index.html', 'mobile-dist/index.html');

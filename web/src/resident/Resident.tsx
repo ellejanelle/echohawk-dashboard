@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ResidentAlerts } from './ResidentAlerts';
 import { LANGUAGES } from '../shared/languages';
 import type { WebCallSession } from 'retell-client-js-sdk';
-import { NodeRelay, defaults, envelope, native, readSaved, request, save, supportsBluetooth, type Delivery, type Settings } from './transport';
+import { deliverRequest } from '../../../app/delivery.js';
+import { NodeRelay, SoundRelay, defaults, envelope, native, readSaved, request, save, supportsBluetooth, type Delivery, type Settings } from './transport';
 
 type Kit = { kit_id: string; title: string; show_id?: string; medical_review: string; display_steps: string[]; authority: string; reference_url: string };
-type CallKey = { call_id: string; resident_token: string; demo: boolean };
+type CallKey = { call_id: string; resident_token: string; demo: boolean; receipt?: { message_id: string; state: string; packet_id?: string } };
 type Call = { id: string; status: 'connecting' | 'connected' | 'ended'; started_at: string; demo: boolean; dispatcher_connected: boolean; kit: Kit | null; messages: { id: string; role: string; text: string }[] };
 type View = 'home' | 'call' | 'kits' | 'beacon' | 'settings' | 'report';
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Please try again.';
@@ -45,6 +46,7 @@ export function Resident() {
   const [seconds, setSeconds] = useState(0);
   const [outbox, setOutbox] = useState<Delivery[]>([]);
   const [nodeName, setNodeName] = useState('');
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const [reportText, setReportText] = useState('');
   const [reportTarget, setReportTarget] = useState('water');
   const voice = useRef<WebCallSession | null>(null);
@@ -61,8 +63,14 @@ export function Resident() {
     });
     storageJobs.current = job; return job;
   };
+  const recordReceipt = (id: string, state: Delivery['state'], packetId?: string) => persistQueue(rows => rows.map(r => r.envelope.message_id === id && r.state !== 'dashboard_received' ? { ...r, state, packet_id: packetId || r.packet_id, error: undefined } : r));
+  const onLocalReceipt = (id: string, state: 'node_received' | 'dashboard_received') => { void recordReceipt(id, state).catch(() => setNotice('Could not save the node receipt.')); };
   const relay = useRef<NodeRelay | null>(null);
-  if (!relay.current) relay.current = new NodeRelay((id, state) => { void persistQueue(rows => rows.map(r => r.envelope.message_id === id && r.state !== 'dashboard_received' ? { ...r, state, error: undefined } : r)).catch(() => setNotice('Could not save the node receipt.')); }, () => setNodeName(''));
+  const sound = useRef<SoundRelay | null>(null);
+  if (!relay.current) relay.current = new NodeRelay(onLocalReceipt, () => setNodeName(''));
+  if (!sound.current) sound.current = new SoundRelay(onLocalReceipt);
+  useEffect(() => () => { sound.current?.disconnect(); void relay.current?.disconnect(); }, []);
+
 
   useEffect(() => {
     void (async () => {
@@ -101,14 +109,18 @@ export function Resident() {
       for (const row of [...queue.current]) {
         if (row.state === 'dashboard_received') continue;
         if (Date.parse(row.envelope.expires_at) <= Date.now()) { await persistQueue(rows => rows.map(x => x.envelope.message_id === row.envelope.message_id ? { ...x, error: 'Expired. Create a new report if help is still needed.' } : x)); continue; }
+        const state = () => queue.current.find(x => x.envelope.message_id === row.envelope.message_id)?.state || 'queued';
         try {
-          if (!navigator.onLine) throw new Error('Offline');
-          const receipt = await request<{ state: string; message_id: string; packet_id: string }>(settingsRef.current, '/resident/reports', row.envelope);
-          if (receipt.state !== 'dashboard_received' || receipt.message_id !== row.envelope.message_id) throw new Error('Invalid delivery receipt');
-          await persistQueue(rows => rows.map(x => x.envelope.message_id === row.envelope.message_id ? { ...x, state: 'dashboard_received', packet_id: receipt.packet_id, error: undefined } : x));
-        } catch {
-          if (relay.current?.deviceId) { try { await relay.current.send(row.envelope); } catch (e) { setNotice(errorText(e)); } }
-        }
+          await deliverRequest(row.envelope, {
+            internet: message => navigator.onLine ? request(settingsRef.current, '/resident/reports', message) : Promise.reject(new Error('Offline')),
+            received: receipt => recordReceipt(receipt.message_id, 'dashboard_received', receipt.packet_id),
+            state,
+            bluetooth: relay.current?.deviceId ? message => relay.current!.send(message) : undefined,
+            waitForReceipt: async () => { const until = Date.now() + 3000; while (state() === 'queued' && Date.now() < until) await new Promise(r => setTimeout(r, 100)); },
+            sound: sound.current?.enabled ? message => sound.current!.send(message) : undefined,
+          });
+        } catch (e) { setNotice(errorText(e)); }
+
       }
     } finally { flushing.current = false; }
   }
@@ -117,15 +129,24 @@ export function Resident() {
   async function startCall(line: 'emergency' | 'nonemergency') {
     if (busy || (call && call.status !== 'ended')) { setView('call'); return; }
     setNotice(''); setBusy(true); setCall(null); setHiddenKit(null); setLibraryKit(null); setMuted(false); setAudioLive(false); setView('call');
+    let help: Delivery['envelope'] | undefined;
     try {
+      if (line === 'emergency') {
+        help = await envelope(device.current, settings.zone, 'beacon', 'Emergency help requested from the app', 'person', demo ? settings.wire : 'json', settings.language);
+        await persistQueue(rows => [...rows, { envelope: help!, state: 'queued' }]);
+        void flush();
+      }
       if (demo) {
-        const key = await request<CallKey>(settings, '/resident/calls', { mode: 'demo', line }); setCallKey(key);
+        const key = await request<CallKey>(settings, '/resident/calls', { mode: 'demo', line, request: help }); setCallKey(key);
+        if (key.receipt?.state === 'dashboard_received') await recordReceipt(key.receipt.message_id, 'dashboard_received', key.receipt.packet_id);
       } else {
+        sound.current?.disconnect(); setSoundEnabled(false);
         const { RetellClient } = await import('retell-client-js-sdk');
         const client = new RetellClient({ key: 'server-proxy', fetch: async (url) => {
           if (!String(url).endsWith('/v3/create-web-call')) throw new Error('This operation is not available from the resident app.');
-          const result = await request<CallKey & Record<string, unknown>>(settings, '/resident/calls', { mode: 'live', line, access_code: settings.accessCode });
-          setCallKey({ call_id: result.call_id, resident_token: result.resident_token, demo: false });
+          const result = await request<CallKey & Record<string, unknown>>(settings, '/resident/calls', { mode: 'live', line, access_code: settings.accessCode, request: help });
+          if (result.receipt?.state === 'dashboard_received') await recordReceipt(result.receipt.message_id, 'dashboard_received', result.receipt.packet_id);
+          setCallKey({ call_id: result.call_id, resident_token: result.resident_token, demo: false, receipt: result.receipt });
           return new Response(JSON.stringify(result), { status: 201, headers: { 'content-type': 'application/json' } });
         } });
         const session = client.createWebCall({ agent_id: 'server-selected', hooks: {
@@ -134,7 +155,7 @@ export function Resident() {
           onEnd: () => { setAudioLive(false); setMuted(false); setCall(c => c ? { ...c, status: 'ended' } : c); },
         } }); voice.current = session; await session.ready;
       }
-    } catch (e) { setNotice(errorText(e)); setView('home'); }
+    } catch (e) { setNotice(errorText(e) + (help ? ' Your request is saved; check its delivery status below.' : '')); setView(help ? 'beacon' : 'home'); if (help) void flush(); }
     finally { setBusy(false); }
   }
   async function endCall() {
@@ -157,6 +178,11 @@ export function Resident() {
     try { setNodeName(await relay.current!.connect(settings)); void flush(); }
     catch (e) { setNotice(errorText(e)); } finally { setBusy(false); }
   }
+  async function enableSound() {
+    setBusy(true); setNotice('');
+    try { await sound.current!.connect(); setSoundEnabled(true); void flush(); }
+    catch (e) { setNotice(errorText(e)); } finally { setBusy(false); }
+  }
   async function saveSettings(e: React.FormEvent) {
     e.preventDefault(); setNotice('');
     if (settings.server && !/^https:\/\/[^\s]+$/.test(settings.server)) { setNotice('Use an HTTPS dashboard address.'); return; }
@@ -167,7 +193,7 @@ export function Resident() {
   const bleeding = visibleKit?.kit_id === 'EH-BLEED-001';
   const duration = Math.floor(seconds / 60).toString().padStart(2, '0') + ':' + (seconds % 60).toString().padStart(2, '0');
   const who = call?.dispatcher_connected ? 'Dispatcher' : 'AI assistant';
-  const networkLabel = !online ? 'Offline · reports stay on this phone' : 'Online';
+  const networkLabel = !online ? 'Offline · trying available relay routes' : 'Online';
   const changeView = (v: View) => { setLibraryKit(null); setNotice(''); setView(v); };
 
   useEffect(() => { window.scrollTo({ top: 0 }); }, [view, call?.kit?.show_id, hiddenKit, libraryKit?.kit_id]);
@@ -190,9 +216,10 @@ export function Resident() {
           <button className="tile red" disabled={!ready || busy} onClick={() => startCall('emergency')}><Icon name="phone" size={36}/><strong>EMERGENCY<br/>HELP</strong><span>{demo ? 'Try a demo call' : 'Reach the pilot line'}</span></button>
           <button className="tile teal" onClick={() => changeView('kits')}><Icon name="kit" size={36}/><strong>KITS FOR<br/>INFO</strong><span>Helpful instructions</span></button>
           <button className="tile purple" onClick={() => changeView('beacon')}><Icon name="beacon" size={36}/><strong>BEACON</strong><span>Send a request for help</span></button>
-        </div><div className="home-bottom"><span>{settings.zone ? 'Zone ' + settings.zone : 'Set your zone in Settings'}</span><button className="text-button" onClick={() => changeView('report')}>Send a report →</button></div>{(!native || settings.server) && <a className="dashboard-link" href={(settings.server || '') + '/app/standard'} target={native ? '_blank' : undefined} rel="noreferrer">Standard mode · more options →</a>}<a className="dashboard-link" href={(settings.server || '') + '/console'} target="_blank" rel="noreferrer">Open dispatcher dashboard ↗</a></section>}
+        </div><div className="home-bottom"><span>{settings.zone ? 'Zone ' + settings.zone : 'Location not set · help requests still send'}</span><button className="text-button" onClick={() => changeView('report')}>Send a report →</button></div>{(!native || settings.server) && <a className="dashboard-link" href={(settings.server || '') + '/app/standard'} target={native ? '_blank' : undefined} rel="noreferrer">Standard mode · more options →</a>}<a className="dashboard-link" href={(settings.server || '') + '/console'} target="_blank" rel="noreferrer">Open dispatcher dashboard ↗</a></section>}
         {view === 'call' && <section className="call-view">
           <p className="eyebrow">{call?.status === 'ended' ? 'CALL FINISHED' : call?.demo ? 'CONNECTED DEMO' : 'ECHOHAWK CALL'}</p><div className="call-avatar"><Icon name={call?.dispatcher_connected ? 'phone' : 'beacon'} size={48}/></div><h1>{call?.status === 'ended' ? 'Call ended' : who}</h1><p className="call-caption">{busy && !call ? 'Starting your call…' : call?.status === 'ended' ? 'Your call has finished.' : call?.demo ? 'Demo messages appear in the dispatcher dashboard.' : audioLive ? 'You can keep talking.' : 'Connecting audio…'}</p>
+          {connected && callKey?.receipt?.state === "dashboard_received" && <p className="fine-print">Emergency request received by the dashboard.</p>}
           {connected && <p className="elapsed">{duration}</p>}
           {connected && call?.kit && <button className="primary" onClick={() => setHiddenKit(null)}><Icon name="kit"/>Reopen instructions</button>}
           {call?.messages.length ? <div className="call-transcript" aria-live="polite">{call.messages.slice(-3).map(m => <div key={m.id}><small>{m.role === 'user' ? 'You' : m.role === 'dispatcher' ? 'Dispatcher' : 'AI assistant'}</small><p>{m.text}</p></div>)}</div> : null}
@@ -200,8 +227,9 @@ export function Resident() {
           {!connected && !busy && <button className="primary" onClick={() => changeView('home')}>Back to home</button>}
         </section>}
         {view === 'kits' && <section><button className="back" onClick={() => changeView('home')}><Icon name="back" size={20}/>Home</button><h1>Kits for info</h1><p className="intro">Instructions you can open again.</p><div className="kit-list">{kits.filter(k => demo || k.medical_review !== 'pending').map(k => <button key={k.kit_id} onClick={() => setLibraryKit(k)}><Icon name="kit"/><span><strong>{k.kit_id === 'EH-BLEED-001' ? 'Severe bleeding' : k.title}</strong><small>{k.medical_review === 'pending' ? 'Demo preview · medical review pending' : 'General information'}</small></span><span>→</span></button>)}</div>{!kits.length && <p>Open while connected once to save the kit catalog.</p>}</section>}
-        {view === 'beacon' && <section><button className="back" onClick={() => changeView('home')}><Icon name="back" size={20}/>Home</button><p className="eyebrow purple-text">BEACON</p><h1>Another way<br/>to reach help.</h1><p className="intro">Send a short request through the internet or a nearby Bluetooth relay node.</p><div className="relay-route"><span>Phone</span><b>→</b><span>Node</span><b>→</b><span>Radio</span><b>→</b><span>Dashboard</span></div><button className="primary purple" disabled={!ready || busy} onClick={() => queueReport('beacon')}><Icon name="beacon"/>Send a help request</button><p className="fine-print">A delivery receipt does not mean responders have been dispatched.</p><div className="node-card"><strong>{nodeName ? 'Connected to ' + nodeName : 'Nearby Bluetooth node'}</strong><p>{supportsBluetooth ? 'Connect to a configured EchoHawk node to relay queued messages.' : 'Use the installed iPhone app for Bluetooth. This browser can queue reports.'}</p><button disabled={busy || !supportsBluetooth} onClick={connectNode}>{nodeName ? 'Choose another node' : 'Connect to a node'}</button></div>
-          <div className="section-title"><h2>Your requests</h2><button className="text-button" onClick={() => void flush()}>Retry delivery</button></div>{!outbox.length && <p className="muted">No requests yet.</p>}<div className="delivery-list">{[...outbox].reverse().map(row => <article key={row.envelope.message_id}><span className={'delivery-state ' + row.state}>{deliveryLabel[row.state]}</span><p>{row.envelope.text || row.envelope.target}</p><small>{new Date(row.envelope.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · Zone {row.envelope.zone_id}</small>{row.state === 'node_received' && <p className="fine-print">Waiting for dashboard confirmation. Keep the request saved.</p>}{row.error && <p className="error-text">{row.error}</p>}</article>)}</div></section>}
+        {view === 'beacon' && <section><button className="back" onClick={() => changeView('home')}><Icon name="back" size={20}/>Home</button><p className="eyebrow purple-text">BEACON</p><h1>Another way<br/>to reach help.</h1><p className="intro">We try the internet first, then a connected Bluetooth node, then sound if enabled.</p><div className="relay-route"><span>Bluetooth / sound</span><b>→</b><span>Node</span><b>→</b><span>Radio</span><b>→</b><span>Dashboard</span></div><button className="primary purple" disabled={!ready || busy} onClick={() => queueReport('beacon')}><Icon name="beacon"/>Send a help request</button><p className="fine-print">A delivery receipt does not mean responders have been dispatched.</p><div className="node-card"><strong>{nodeName ? 'Connected to ' + nodeName : 'Nearby Bluetooth node'}</strong><p>{supportsBluetooth ? 'Connect to a configured EchoHawk node to relay queued messages.' : 'Use the installed iPhone app for Bluetooth. This browser can queue reports.'}</p><button disabled={busy || !supportsBluetooth} onClick={connectNode}>{nodeName ? 'Choose another node' : 'Connect to a node'}</button></div>
+          <div className="node-card"><strong>{soundEnabled ? 'Sound fallback is listening' : 'Sound to a nearby node'}</strong><p>Uses your speaker to send a short signal and your microphone to hear a receipt. Keep the app open and sound on. A compatible node must be nearby.</p>{soundEnabled ? <button onClick={() => { sound.current?.disconnect(); setSoundEnabled(false); }}>Stop sound fallback</button> : <button disabled={busy || !demo || settings.wire !== 'frame16' || (!!call && !call.demo && call.status !== 'ended')} onClick={enableSound}>Enable sound fallback</button>}<p className="fine-print">Demo hardware profile. A node receipt confirms pickup; a dashboard receipt confirms delivery. Voice audio is not sent through the radio.</p></div>
+          <div className="section-title"><h2>Your requests</h2><button className="text-button" onClick={() => void flush()}>Retry delivery</button></div>{!outbox.length && <p className="muted">No requests yet.</p>}<div className="delivery-list">{[...outbox].reverse().map(row => <article key={row.envelope.message_id}><span className={'delivery-state ' + row.state}>{deliveryLabel[row.state]}</span><p>{row.envelope.text || row.envelope.target}</p><small>{new Date(row.envelope.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {row.envelope.zone_id === 'unknown' ? 'Location not set' : 'Zone ' + row.envelope.zone_id}</small>{row.state === 'node_received' && <p className="fine-print">Waiting for dashboard confirmation. Keep the request saved.</p>}{row.error && <p className="error-text">{row.error}</p>}</article>)}</div></section>}
         {view === 'report' && <section><button className="back" onClick={() => changeView('home')}><Icon name="back" size={20}/>Home</button><h1>Send a report</h1><p className="intro">Your report goes to the same dashboard as calls. If disconnected, it stays queued.</p><form onSubmit={e => { e.preventDefault(); void queueReport('report'); }}><label htmlFor="target">What do you see?</label><select id="target" value={reportTarget} onChange={e => setReportTarget(e.target.value)}><option value="water">Water problem</option><option value="power">Power outage</option><option value="road">Road blocked</option><option value="person">Someone needs help</option><option value="unknown">Something else</option></select><label htmlFor="report-text">A short description</label><textarea id="report-text" required maxLength={120} value={reportText} onChange={e => setReportText(e.target.value)} placeholder="What is happening nearby?"/><button className="primary" disabled={!ready || busy}>Send report</button></form></section>}
         {view === 'settings' && <section><h1>Settings</h1><form onSubmit={saveSettings}><label htmlFor="zone">Your district or zone</label><input id="zone" value={settings.zone} onChange={e => setSettings(s => ({ ...s, zone: e.target.value.trim().toUpperCase() }))} placeholder="For example, Z04"/><label htmlFor="language">Alert language</label><select id="language" value={settings.language} onChange={e => setSettings(s => ({ ...s, language: e.target.value }))}>{LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.native}</option>)}</select><label htmlFor="server">Dashboard address</label><input id="server" disabled={connected} type="url" value={settings.server} onChange={e => setSettings(s => ({ ...s, server: e.target.value }))} placeholder={native ? 'https://your-dashboard.example' : 'Use this server (leave blank)'}/><p className="fine-print">The installed iPhone app needs the HTTPS address of your EchoHawk server.</p><label className="check-row"><input type="checkbox" checked={demo} disabled={connected} onChange={e => setDemo(e.target.checked)}/>Demo calls</label>{!demo && <><p>{liveAvailable ? 'Pilot voice service is configured.' : 'Live calls need server setup. Demo calls work without a voice account.'}</p><label htmlFor="code">Pilot access code</label><input id="code" type="password" autoComplete="off" value={settings.accessCode} onChange={e => setSettings(s => ({ ...s, accessCode: e.target.value }))}/><p className="fine-print">Kept only for this app session.</p></>}<details className="node-settings"><summary>Bluetooth node configuration</summary><p>Match the town receiver firmware. The personal eHawk tag is a sender, not a receiver for this app.</p><label htmlFor="wire">Message format</label><select id="wire" value={settings.wire} onChange={e => setSettings(s => ({ ...s, wire: e.target.value as Settings['wire'] }))}><option value="frame16">EchoHawk demo · signed 16-byte frame</option><option value="json">Custom node · JSON envelope</option></select><p className="fine-print">The demo profile uses the existing development key and short messages. Real radio hardware and background reception still need validation.</p>{(['service', 'tx', 'rx'] as const).map(key => <div key={key}><label htmlFor={key}>{key === 'service' ? 'Service UUID' : key === 'tx' ? 'Write characteristic UUID' : 'Receipt characteristic UUID'}</label><input id={key} value={settings[key]} onChange={e => setSettings(s => ({ ...s, [key]: e.target.value.trim().toLowerCase() }))} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/></div>)}</details><button className="primary">Save settings</button></form></section>}
       </>}

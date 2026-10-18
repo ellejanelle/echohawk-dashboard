@@ -133,3 +133,89 @@ test('signed native frame and internet retries share one report in either arriva
   const forged = { ...make(304), frame_b64: 'AAAAAAAAAAAAAAAAAAAAAA==' };
   assert.equal((await api('/resident/reports', forged)).status, 400);
 });
+
+test('emergency tap creates one actionable request before any speech, even without a zone', async t => {
+  const { api, store, engine } = await boot(t);
+  const e = { ...report(), zone_id: 'unknown', action: 'unknown' };
+  const created = await api('/resident/calls', { mode: 'demo', line: 'emergency', request: e });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.receipt.state, 'dashboard_received');
+  assert.equal(store.packets.length, 1);
+  assert.equal(store.incidents[0].rung, 'hand');
+  assert.equal(engine.ranked()[0].intake_pending, true);
+  assert.equal((await api('/health')).data.requests_open, 1);
+  const call = (await api('/calls')).data.find(c => c.id === created.data.call_id);
+  assert.equal(call.source, 'app'); assert.equal(call.rung, 'hand'); assert.equal(call.intake_pending, true);
+  assert.equal((await api('/resident/calls', { mode: 'demo', line: 'emergency', request: e })).status, 409);
+  assert.equal(store.calls.length, 1, 'a retried registration must not create another voice call');
+  await api('/resident/calls/' + created.data.call_id + '/message', { text: 'Severe bleeding demo' }, created.data.resident_token);
+  assert.equal(store.packets.length, 1);
+  assert.equal(store.incidents[0].max_severity, 5);
+  assert.equal(engine.ranked()[0].intake_pending, false);
+  assert.equal(engine.ranked()[0].source_counts.app, 1);
+  assert.equal((await api('/health')).data.requests_open, 1);
+  const retry = await api('/resident/reports', e);
+  assert.equal(retry.data.packet_id, created.data.receipt.packet_id);
+  const other = await api('/resident/reports', { ...e, message_id: randomUUID(), device_id: 'app-another-123' });
+  assert.notEqual(other.data.incident_id, created.data.receipt.incident_id, 'unknown locations must not be assumed to be the same emergency');
+});
+
+test('voice details move the same request to its known zone without inflating volume', async t => {
+  const { api, store, engine } = await boot(t);
+  await api('/resident/calls', { mode: 'demo', line: 'emergency', request: { ...report(), zone_id: 'unknown' } });
+  const packet = store.packets[0];
+  const triggers = { hard: ['sos_beacon'], soft: [{ id: 'detail', weight: 1 }] };
+  engine.refine(packet, { zone_id: 'Z06', target: 'water', severity: 3, content_status: 'extracted' }, triggers);
+  const score = store.incidents[0].score;
+  engine.refine(packet, { zone_id: 'Z06', target: 'water', severity: 3, content_status: 'extracted' }, triggers);
+  assert.equal(store.packets.length, 1); assert.equal(store.incidents.length, 1);
+  assert.equal(store.incidents[0].zone_id, 'Z06');
+  assert.equal(store.incidents[0].score, score, 'repeated extraction must not compound confidence');
+  assert.equal(store.incidents[0].independent_count, 1);
+  assert.equal(store.zoneWindows.reduce((n, w) => n + w.n, 0), 1);
+  assert.equal(store.zoneWindows.find(w => w.zone_id === 'Z06').n, 1);
+});
+
+test('one signed request survives a server restart and deduplicates sound, Bluetooth and internet', async t => {
+  const { encodeFrame, toBase64 } = await import('../../device/frame.js');
+  const { config } = await import('../config.js');
+  const dir = mkdtempSync(join(tmpdir(), 'echohawk-receipts-')); t.after(() => rmSync(dir, { recursive: true }));
+  const { api, store } = await boot(t);
+  store.path = join(dir, 'db.json');
+  const e = { ...report(), zone_id: 'unknown', action: 'unknown', sequence: 710 };
+  e.frame_b64 = toBase64(encodeFrame({ type: 'sos', zone: 0, target: e.target, severity: e.severity, action: e.action, language: 'en', sequence: e.sequence }, config.frameKey));
+  const first = await api('/device/packets', { frame_b64: e.frame_b64, node_id: 'N-0812-A', channel: 'sound' });
+  const second = await api('/resident/reports', e);
+  assert.equal(second.data.packet_id, first.data.packet_id);
+  const restored = new Store(store.path);
+  assert.equal(Object.keys(restored.relays).length, 1);
+  const engine = new Engine(restored), hub = new RetellHub({ store: restored, engine });
+  const server = createHttpServer({ store: restored, engine, hub });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  t.after(async () => { server.closeAllConnections(); await new Promise(r => server.close(r)); });
+  const result = await fetch(`http://127.0.0.1:${server.address().port}/device/packets`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ frame_b64: e.frame_b64, node_id: 'N-0812-B', channel: 'ble' }) }).then(r => r.json());
+  assert.equal(result.duplicate, true); assert.equal(result.packet_id, first.data.packet_id);
+  assert.equal(restored.packets.length, 1); assert.ok(result.ack_b64);
+});
+
+test('delivery falls back only after internet failure and missing Bluetooth acknowledgement', async () => {
+  const { deliverRequest } = await import('../../app/delivery.js');
+  const e = report(); let state = 'queued'; const attempts = [];
+  const routes = {
+    internet: async msg => { attempts.push(['internet', msg.message_id]); throw new Error('offline'); },
+    received: async () => { state = 'dashboard_received'; }, state: () => state,
+    bluetooth: async msg => { attempts.push(['bluetooth', msg.message_id]); },
+    waitForReceipt: async () => {},
+    sound: async msg => { attempts.push(['sound', msg.message_id]); },
+  };
+  assert.equal(await deliverRequest(e, routes), 'queued', 'writing and playing alone do not confirm delivery');
+  assert.deepEqual(attempts, ['internet','bluetooth','sound'].map(route => [route, e.message_id]));
+  attempts.length = 0;
+  routes.waitForReceipt = async () => { state = 'node_received'; };
+  assert.equal(await deliverRequest(e, routes), 'node_received');
+  assert.deepEqual(attempts.map(x => x[0]), ['internet','bluetooth']);
+  attempts.length = 0;
+  routes.internet = async () => ({ message_id: e.message_id, state: 'dashboard_received' });
+  assert.equal(await deliverRequest(e, routes), 'dashboard_received');
+  assert.equal(attempts.length, 0);
+});
